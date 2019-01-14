@@ -31,7 +31,7 @@ SUPPLY_UNITS = {Race.Protoss: {UnitTypeId.PYLON, UnitTypeId.NEXUS},
 ####ACTIONS
 
 # TODO: simplify if needed
-def train_unit(race, unit, buiding=None):  # <-pass building/larva
+def train_unit(race, unit, building):  # <-pass building/larva
     """Action to train units
 
         For zerg pass larva instead of building
