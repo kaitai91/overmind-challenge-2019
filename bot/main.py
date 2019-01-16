@@ -54,27 +54,7 @@ class MyBot(sc2.BotAI):
             return
 
         #Reinforce defence
-        if len(self.def_force_tags) < 1:
-            enemy_hp = 0
-            enemy_g_dps = 0
-            known_enemies = self.known_enemy_units.not_structure.not_flying
-            #enemy_count = self.known_enemy_units.amount
-            closest_enemy = None
-            closest_dist = 9999999
-            self.attacking_enemy_units = []
-            for enemy in known_enemies:
-                    if enemy.can_attack_ground:
-                        dist = self.units.structure.closest_distance_to(enemy)
-                        if dist < max(enemy.radar_range - 1, (1.5 * enemy.ground_range) + 1):
-                            if dist < closest_dist:
-                                closest_enemy = enemy
-                            self.attacking_enemy_units.append(enemy)
-                            enemy_hp += enemy.health + enemy.shield
-                            enemy_g_dps += enemy.ground_dps
-            if len(self.def_force_tags) < 1 and len(self.attacking_enemy_units) > 0:
-                await self.assing_defence(enemy_hp, enemy_g_dps, closest_enemy)
-
-
+        self.reinforce_defence()
 
         if self.supply_left < self.townhalls.ready.amount and not self.pend_supply_flag:
             self.pend_supply_flag = 1
@@ -217,14 +197,55 @@ class MyBot(sc2.BotAI):
                     if self.pend_supply_flag == 1:
                         self.pend_supply_flag = 2
 
+    async def reinforce_defence(self):
+        #ground hp, air hp, ground dps, air dps
+        enemy_g_hp = 0
+        enemy_a_hp = 0
+        enemy_g_dps = 0
+        known_g_enemies = self.known_enemy_units.not_structure.not_flying
+        known_a_enemies = self.known_enemy_units.not_structure.flying
+        #enemy_count = self.known_enemy_units.amount
+        closest_enemy = None
+        closest_dist = 9999999
+        self.attacking_enemy_units = []
+        for enemy in known_g_enemies:
+                if enemy.can_attack_ground:
+                    dist = self.units.structure.closest_distance_to(enemy)
+                    if dist < max(12, enemy.radar_range, (enemy.ground_range) + 5):
+                        if dist < closest_dist:
+                            closest_enemy = enemy
+                        self.attacking_enemy_units.append(enemy)
+                        enemy_g_hp += enemy.health + enemy.shield
+                        enemy_g_dps += enemy.ground_dps
+
+        for enemy in known_a_enemies:
+                if enemy.can_attack_ground:
+                    dist = self.units.structure.closest_distance_to(enemy)
+                    if dist < max(12, enemy.radar_range, (enemy.ground_range) + 5):
+                        #TODO: take into account when making anti-air
+                        # if dist < closest_dist:
+                        #     closest_enemy = enemy
+                        # self.attacking_enemy_units.append(enemy)
+                        # enemy_a_hp += enemy.health + enemy.shield
+                        enemy_g_dps += enemy.ground_dps
+
+        if len(self.def_force_tags) < 1 and len(self.attacking_enemy_units) > 0:
+            await self.assing_defence(enemy_g_hp, enemy_g_dps, closest_enemy)
+        #not working (is_attacking) maybe only with own units...
+        if closest_enemy:
+            if closest_enemy.is_attacking:
+                await self.chat_send(f"Enemy{closest_enemy.type_id()}is attacking!")
+
     async def assing_defence(self, enemy_hp, enemy_dps, enemy):
         army = self.units.not_structure.exclude_type(self.w_type).filter(lambda u: u.can_attack_ground)
         workers = self.workers.filter(lambda w: not w.is_constructing_scv).sorted(lambda w: w.health+w.shield, reverse = True).sorted(lambda w: w.distance_to(enemy))
         #combined_tags = set(self.attack_force_tags.keys()).union(set(self.def_force_tags.keys()))
 
         #TODO: better way to assign and track enemy
+        if len(army)+len(workers) < 1:
+            return
 
-        if enemy_dps < 4:
+        if enemy_dps < 4:  #1 worker or smthing like that
             for asset in army:
                 if asset.tag not in self.def_force_tags and asset.tag not in self.attack_force_tags:
                     self.issue_unit_defence(asset, enemy)
@@ -241,20 +262,29 @@ class MyBot(sc2.BotAI):
             own_dps = 0
             defenders = []
             for asset in army:
-                if own_hp < (enemy_hp * 3 + 1) or own_dps < (enemy_dps * 3 + 1):
+                if own_hp < (enemy_hp * 3 + 1) or own_dps < (enemy_dps * 2 + 1):
                     defenders.append(asset)
                     own_hp += asset.health+asset.shield
                     own_dps += max(asset.ground_dps, asset.air_dps)
 
             for worker in workers:
-                if own_hp < (enemy_hp * 3 + 1) or own_dps < (enemy_dps * 3 + 1):
+                if own_hp < (enemy_hp * 3 + 1) or own_dps < (enemy_dps * 2 + 1):
                     defenders.append(worker)
-                    own_hp += (worker.health+worker.shield)/2
+                    own_hp += (worker.health+worker.shield)
                     own_dps += worker.ground_dps/2
 
-            self.issue_group_defence(defenders, enemy)
-            await self.chat_send(f"You Attack with:{len(self.attacking_enemy_units)} Units - {enemy_hp} total hp, {enemy_dps} total dps")
-            await self.chat_send(f"I Defend with:{len(defenders)} defenders - {own_hp} total hp, {own_dps} total dps")
+            if own_hp >= enemy_hp and own_dps > enemy_dps:
+                self.issue_group_defence(defenders, enemy)
+                await self.chat_send(f"You Attack with:{len(self.attacking_enemy_units)} Units - {enemy_hp} total hp, {enemy_dps} total dps")
+                await self.chat_send(f"I Defend with:{len(defenders)} defenders - {own_hp} total hp, {own_dps} total dps")
+
+            #TODO: FIX functionality so that following can be run
+            else:
+                if len(self.def_force_tags) > 0:
+                    for def_tag in self.def_force_tags:
+                        self.def_force_tags[def_tag]["retreating"] = 5  #retreat
+                    await self.chat_send(f"Your attack is too much atm - Retreating")
+
 
     async def attack_unit_micro(self):
         """"""
@@ -300,7 +330,7 @@ class MyBot(sc2.BotAI):
 
 
 
-            tags[tg]["hp_prev"] = hpc = tags[tg]["hp_curr"] + unit.shield
+            tags[tg]["hp_prev"] = hpc = tags[tg]["hp_curr"]
             #worker.health_prev = worker.health
 
         for tag in tb_removed:
