@@ -59,7 +59,6 @@ class MyBot(sc2.BotAI):
         self.enemy_att_str_max = {"hp": 0, "g_dps": 0, "pos": None}
         self.attacking_enemy_units = []
 
-        self.iteration
         self.clock = 0
 
         # flags
@@ -157,14 +156,14 @@ class MyBot(sc2.BotAI):
             # self.d_task = True
             await self.expand() #<-- set flag inside that method
             # self.d_task = False
-            return
+            # return
 
         if self.clock >= 60 and not self.w_dist_flag:
             self.w_dist_flag = 0.8
             # self.d_task = True
             await self.distribute_workers()
             # self.d_task = False
-            return
+            # return
 
         await self.build_supply()
         actions.extend(self.manage_idle_workers())
@@ -199,8 +198,8 @@ class MyBot(sc2.BotAI):
                 ((len(self.attack_force_tags)+len(self.def_force_tags)) <
                  (self.units.not_structure.not_flying.amount/2 + 1)):
 
-            # FIXME: uncomment to have simplest winning strategy! LOL
-            target = None
+            # "fixed": uncomment to have simplest winning strategy! LOL
+            # target = None  #not needed
             if not self.killed_start_base:
                 target = self.enemy_start_locations[0]
                 self.attack_flag = 120  # seconds
@@ -442,7 +441,7 @@ class MyBot(sc2.BotAI):
 
     async def assign_defence(self, enemy_hp, enemy_dps, enemy_position):
 
-        print("trying to assign defence")
+        #print("trying to assign defence")
         army = self.units.not_structure.exclude_type(self.w_type).filter(lambda u: u.can_attack_ground)
         #sort workers: high hp and close distance preferred
         workers = self.workers.filter(lambda w: not w.is_constructing_scv).\
@@ -452,7 +451,7 @@ class MyBot(sc2.BotAI):
         #TODO: better way to assign and track enemy
 
         if len(army)+len(workers) < 1:
-            print("no army or workers")
+            # print("no army or workers")
             return
 
         actions = []
@@ -461,7 +460,7 @@ class MyBot(sc2.BotAI):
         defenders = []
         if enemy_dps < 4:  #1 worker or smthing like that
             for asset in army:
-                if own_hp < (enemy_hp + 1) or own_dps < (enemy_dps + 1):
+                if own_hp <= (enemy_hp + 1) or own_dps <= (enemy_dps + 1):
                     defenders.append(asset)
                     own_hp += asset.health + asset.shield
                     own_dps += asset.ground_dps
@@ -469,7 +468,7 @@ class MyBot(sc2.BotAI):
                     break
 
             for worker in workers:
-                if own_hp < (enemy_hp + 1) or own_dps < (enemy_dps + 1):
+                if own_hp <= (enemy_hp + 1) or own_dps <= (enemy_dps + 1):
                     defenders.append(worker)
                     own_hp += (worker.health + worker.shield)
                     own_dps += worker.ground_dps
@@ -479,7 +478,7 @@ class MyBot(sc2.BotAI):
         elif enemy_dps < 20:
             # more_needed = own_hp < (enemy_hp + 1) or own_dps < (enemy_dps + 1) #try it out
             for asset in army:
-                if own_hp < (enemy_hp*1.5 + 1) or own_dps < (enemy_dps*1.5 + 1):
+                if own_hp <= (enemy_hp*1.5 + 1) or own_dps <= (enemy_dps*1.5 + 1):
                     defenders.append(asset)
                     own_hp += asset.health + asset.shield
                     own_dps += asset.ground_dps
@@ -487,7 +486,7 @@ class MyBot(sc2.BotAI):
                     break
 
             for worker in workers:
-                if own_hp < (enemy_hp*1.5 + 1) or own_dps < (enemy_dps*1.5 + 1):
+                if own_hp <= (enemy_hp*1.5 + 1) or own_dps <= (enemy_dps*1.5 + 1):
                     defenders.append(worker)
                     own_hp += (worker.health + worker.shield)
                     own_dps += worker.ground_dps
@@ -497,7 +496,7 @@ class MyBot(sc2.BotAI):
 
         else:  #enemy_g_dps > 20:
             for asset in army:
-                if own_hp < (enemy_hp * 3 + 1) or own_dps < (enemy_dps * 2 + 1):
+                if own_hp <= (enemy_hp * 3 + 1) or own_dps <= (enemy_dps * 2 + 1):
                     defenders.append(asset)
                     own_hp += asset.health+asset.shield
                     own_dps += asset.ground_dps
@@ -505,7 +504,7 @@ class MyBot(sc2.BotAI):
                     break
 
             for worker in workers:
-                if own_hp < (enemy_hp * 3 + 1) or own_dps < (enemy_dps * 2 + 1):
+                if own_hp <= (enemy_hp * 3 + 1) or own_dps <= (enemy_dps * 2 + 1):
                     defenders.append(worker)
                     own_hp += (worker.health+worker.shield)
                     own_dps += worker.ground_dps
@@ -514,14 +513,14 @@ class MyBot(sc2.BotAI):
 
         # check this is on bottom level indentation in the method
         # this part should be done always in the end of this method
-        if enemy_dps < 4:
+        if enemy_dps < 10:
             condition = True
         else:
             condition = (own_hp >= enemy_hp and own_dps >= enemy_dps) or self.townhalls.amount <= 2  # or self.clock<120
         if condition:
             actions.extend(self.issue_group_defence(defenders, enemy_position))
             if not self.def_msg_flag:
-                if (len(self.def_force_tags) >= workers.amount+army.amount): # and \
+                if (len(self.def_force_tags) >= workers.amount+army.amount):  # and \
                         # (own_hp/max(0.1, enemy_dps) > enemy_hp/max(0.1, own_dps) or self.townhalls.amount <= 2):
                     await self.chat_send(f"You attack at: {enemy_position}")
                     await self.chat_send(f"All Hands On The Deck (flex) (flex)")
