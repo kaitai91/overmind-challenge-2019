@@ -54,11 +54,12 @@ class MyBot(sc2.BotAI):
 
     def __init__(self):
         super().__init__()
-        self.enemy_att_str_prev = {"hp": 0, "g_dps": 0, "pos": 0}
-        self.enemy_att_str_curr = {"hp": 0, "g_dps": 0, "pos": 0}
-        self.enemy_att_str_max = {"hp": 0, "g_dps": 0, "pos": 0}
+        self.enemy_att_str_prev = {"hp": 0, "g_dps": 0, "pos": None}
+        self.enemy_att_str_curr = {"hp": 0, "g_dps": 0, "pos": None}
+        self.enemy_att_str_max = {"hp": 0, "g_dps": 0, "pos": None}
         self.attacking_enemy_units = []
 
+        self.iteration
         self.clock = 0
 
         # flags
@@ -98,11 +99,12 @@ class MyBot(sc2.BotAI):
         clock_diff = self.getTimeInSeconds() - self.clock
         self.clock = self.getTimeInSeconds()
 
-        #TODO: move all flag (time) reductions here
+        # move all flag (time) reductions here
         self.enemy_att_str_save = max(0, self.enemy_att_str_save - clock_diff)
         self.def_msg_flag = max(0, self.def_msg_flag - clock_diff)
         self.attack_flag = max(0, self.attack_flag - clock_diff)
-
+        self.expand_flag = max(0, self.expand_flag - clock_diff)
+        self.w_dist_flag = max(0, self.w_dist_flag - clock_diff)
 
         # if self.d_task:  # wait task to finish to avoid timeouts (does this actually work?)
         #     return
@@ -126,16 +128,20 @@ class MyBot(sc2.BotAI):
         if not self.enemy_att_str_save:
             if self.enemy_att_str_max["hp"] > 0.9:
                 print("max reset")
-            self.enemy_att_str_max = {"hp": 0, "g_dps": 0, "pos": 0}
+            #never erase enemy last position (where they did attack last time)
+            self.enemy_att_str_max = {"hp": 0, "g_dps": 0, "pos": self.enemy_att_str_max["pos"]}
 
         c = self.enemy_att_str_curr
         p = self.enemy_att_str_prev
         m = self.enemy_att_str_max
         self.enemy_att_str_max["hp"] = max(c["hp"], p["hp"], m["hp"])
         self.enemy_att_str_max["g_dps"] = max(c["g_dps"], p["g_dps"], m["g_dps"])
-        self.enemy_att_str_max["pos"] = c["pos"]  # use most recent position
+        if c["pos"]:
+           # print(self.enemy_att_str_max)
+            self.enemy_att_str_max["pos"] = c["pos"]  # use most recent position
 
-        if enemy_att_got_stronger:
+        # if enemy_att_got_stronger:
+        if m["pos"]:
             await self.reinforce_defence()
 
         if self.supply_left < self.townhalls.ready.amount and not self.pend_supply_flag and self.supply_cap < 200:
@@ -152,8 +158,6 @@ class MyBot(sc2.BotAI):
             await self.expand() #<-- set flag inside that method
             # self.d_task = False
             return
-        else:
-            self.expand_flag = max(0, self.expand_flag-clock_diff)
 
         if self.clock >= 60 and not self.w_dist_flag:
             self.w_dist_flag = 0.8
@@ -161,8 +165,6 @@ class MyBot(sc2.BotAI):
             await self.distribute_workers()
             # self.d_task = False
             return
-        else:
-            self.w_dist_flag = max(0, self.w_dist_flag-clock_diff)
 
         await self.build_supply()
         actions.extend(self.manage_idle_workers())
@@ -174,7 +176,7 @@ class MyBot(sc2.BotAI):
 
         #micro every max(0.1,clock_diff) if you have force
         if len(self.attack_force_tags) > 0 and (min(0.1, clock_diff) <= (self.clock - int(self.clock)) % max(0.1, clock_diff)): #micro every 0.1 second
-        #if len(self.attack_force_tags) > 0 and (min(1,clock_diff) <= (self.clock - int(self.clock))):  # micro every 1 second (capping if lags)
+        #if len(self.attack_force_tags) > 0 and (min(1,clock_diff) <= (self.clock - int(self.clock))):  # micro every second (capping if lags)
             if int(self.clock) % 16 == 15 and clock_diff >= self.clock-int(self.clock):  #max once a second once in 33s
                 await self.chat_send(f"Attacking with: {len(self.attack_force_tags)}")
 
@@ -193,7 +195,9 @@ class MyBot(sc2.BotAI):
                 print("killed enemy starting base")
                 self.killed_start_base = 1
 
-        if self.supply_used > 110 and not self.attack_flag and len(self.attack_force_tags) < 100:
+        if self.supply_used > 110 and not self.attack_flag and \
+                ((len(self.attack_force_tags)+len(self.def_force_tags)) <
+                 (self.units.not_structure.not_flying.amount/2 + 1)):
 
             # FIXME: uncomment to have simplest winning strategy! LOL
             target = None
@@ -217,10 +221,11 @@ class MyBot(sc2.BotAI):
             if self.attack_flag > 20:
                 actions.extend(self.issue_worker_attack(target))
             else: #scout attack location
-                if len(self.workers) > 15:
+                if self.workers.amount > 15:
+                    group_size = max(4, int(self.workers.amount*0.25)+1)
                     await self.chat_send(f"You can run, but You can't hide! (devil)")
                     random_scout_squad = self.workers.filter(lambda w: not w.is_constructing_scv).\
-                                             prefer_close_to(target)[:4]
+                                             prefer_close_to(target)[:group_size]
                     actions.extend(self.issue_group_attack(random_scout_squad, target))
 
         if self.supply_used > 190: #attack when no units attacking and close to max supply
@@ -353,12 +358,12 @@ class MyBot(sc2.BotAI):
         known_a_enemies = self.known_enemy_units.not_structure.flying
         # enemy_count = self.known_enemy_units.amount
         enemy_position = None
-        closest_dist = 9999999
+        closest_dist = math.inf
         self.attacking_enemy_units = []
         for enemy in known_g_enemies:
             if enemy.can_attack_ground:
                 dist = self.units.structure.closest_distance_to(enemy)
-                if dist < max(12, enemy.ground_range):  # max(16, enemy.radar_range, (enemy.ground_range) + 5):
+                if dist < max(16, enemy.ground_range):  # max(16, enemy.radar_range, (enemy.ground_range) + 5):
                     if dist < closest_dist:
                         enemy_position = enemy.position
                     self.attacking_enemy_units.append(enemy)
@@ -368,7 +373,7 @@ class MyBot(sc2.BotAI):
         for enemy in known_a_enemies:
             if enemy.can_attack_ground:
                 dist = self.units.structure.closest_distance_to(enemy)
-                if dist < max(12, enemy.ground_range):
+                if dist < max(16, enemy.ground_range):
                     # TODO: take into account when making anti-air
                     # if dist < closest_dist:
                     #     closest_enemy = enemy
@@ -377,6 +382,14 @@ class MyBot(sc2.BotAI):
                     enemy_g_dps += enemy.ground_dps
 
         total_hp = enemy_g_hp + enemy_a_hp
+
+        #if enemy has been seen, use the last location as enemy position
+        if not enemy_position: #is none
+            if self.enemy_att_str_curr["pos"]:
+                enemy_position = self.enemy_att_str_curr["pos"]
+            elif self.enemy_att_str_max["pos"]:
+                enemy_position = self.enemy_att_str_max["pos"]
+                print("enemy position taken from max")
         enemy_att_str = {"hp": total_hp, "g_dps": enemy_g_dps, "pos": enemy_position}
         return enemy_att_str
 
@@ -391,7 +404,6 @@ class MyBot(sc2.BotAI):
         if len(self.attack_force_tags) > 0 and len(diff_a) > 0:
             for tg in diff_a:
                 del (self.attack_force_tags[tg])
-        # prioritize defence over attack (this shouldnt happen tho)
         for tg in set(self.def_force_tags.keys()).intersection(self.attack_force_tags):
             del (self.attack_force_tags[tg])
 
@@ -399,15 +411,24 @@ class MyBot(sc2.BotAI):
     async def reinforce_defence(self):
 
         #shorten names
+        m = self.enemy_att_str_max
+        if not m["pos"]:
+            print("no position available - reinforce defence later")
+            return
+
         c = self.enemy_att_str_curr
         p = self.enemy_att_str_prev
 
         #changes: (differences)
         d_hp = max(0, c["hp"]-p["hp"])
         d_g_dps = max(0, c["g_dps"]-p["g_dps"])
+
+        #d_hp = m["hp"]-max(c["hp"], p["hp"])
+        #d_g_dps = m["g_dps"]-max(c["g_dps"], p["g_dps"])
         position = c["pos"]
-        if len(self.attacking_enemy_units) > 0 and (d_hp > 0 or d_g_dps > 0):
-            await self.assign_defence(d_hp, d_g_dps, position)
+        if len(self.attacking_enemy_units) > 0 and (d_hp > 0 or d_g_dps > 0 or len(self.def_force_tags) < 1):
+            #await self.assign_defence(d_hp, d_g_dps, position)
+            await self.assign_defence(m["hp"], m["g_dps"], m["pos"])
 
         # #not working (is_attacking) maybe only with own units...
         # if closest_enemy:
@@ -421,10 +442,11 @@ class MyBot(sc2.BotAI):
 
     async def assign_defence(self, enemy_hp, enemy_dps, enemy_position):
 
+        print("trying to assign defence")
         army = self.units.not_structure.exclude_type(self.w_type).filter(lambda u: u.can_attack_ground)
         #sort workers: high hp and close distance preferred
         workers = self.workers.filter(lambda w: not w.is_constructing_scv).\
-            prefer_close_to(enemy_position).sorted(lambda w: -(w.health+w.shield))
+            sorted(lambda w: -(w.health+w.shield)).prefer_close_to(enemy_position)
         #combined_tags = set(self.attack_force_tags.keys()).union(set(self.def_force_tags.keys()))
 
         #TODO: better way to assign and track enemy
@@ -434,84 +456,98 @@ class MyBot(sc2.BotAI):
             return
 
         actions = []
+        own_hp = 0
+        own_dps = 0
+        defenders = []
         if enemy_dps < 4:  #1 worker or smthing like that
-            for asset in army:
-                if asset.tag not in self.def_force_tags: #and asset.tag not in self.attack_force_tags:
-                    actions.append(self.issue_unit_defence(asset, enemy_position))
-                    break
-            else: #<-no assets found //end for
-                for asset in workers:
-                    if asset.tag not in self.def_force_tags: #and asset.tag not in self.attack_force_tags:
-                        actions.append(self.issue_unit_defence(asset, enemy_position))
-                        break
-                else:
-                    pass  #no units available :(
-        elif enemy_dps < 10:
-            own_hp = 0
-            own_dps = 0
-            defenders = []
-            # more_needed = own_hp < (enemy_hp + 1) or own_dps < (enemy_dps + 1) #try it out
             for asset in army:
                 if own_hp < (enemy_hp + 1) or own_dps < (enemy_dps + 1):
                     defenders.append(asset)
                     own_hp += asset.health + asset.shield
                     own_dps += asset.ground_dps
+                else:
+                    break
+
+            for worker in workers:
+                if own_hp < (enemy_hp + 1) or own_dps < (enemy_dps + 1):
+                    defenders.append(worker)
+                    own_hp += (worker.health + worker.shield)
+                    own_dps += worker.ground_dps
+                else:
+                    break
+
+        elif enemy_dps < 20:
+            # more_needed = own_hp < (enemy_hp + 1) or own_dps < (enemy_dps + 1) #try it out
+            for asset in army:
+                if own_hp < (enemy_hp*1.5 + 1) or own_dps < (enemy_dps*1.5 + 1):
+                    defenders.append(asset)
+                    own_hp += asset.health + asset.shield
+                    own_dps += asset.ground_dps
+                else:
+                    break
 
             for worker in workers:
                 if own_hp < (enemy_hp*1.5 + 1) or own_dps < (enemy_dps*1.5 + 1):
                     defenders.append(worker)
                     own_hp += (worker.health + worker.shield)
                     own_dps += worker.ground_dps
+                else:
+                    break
 
-            if own_hp >= enemy_hp and own_dps > enemy_dps:
-                actions.extend(self.issue_group_defence(defenders, enemy_position))
-                actions.append(self.chat_send(f"Location:{enemy_position}"))
-                actions.append(self.chat_send(f"You Attack with:{len(self.attacking_enemy_units)} Units - {enemy_hp} total hp, {enemy_dps} total dps"))
-                actions.append(self.chat_send(f"I Defend with:{len(defenders)} defenders - {own_hp} total hp, {own_dps} total dps"))
 
-            # retreat from strong enemy
-            else:
-                if len(self.def_force_tags) > 0:
-                    for def_tag in self.def_force_tags:
-                        self.def_force_tags[def_tag]["retreating"] = 5
-                    actions.append(self.chat_send(f"Your attack is too much atm - Retreating"))
-                elif not self.def_msg_flag:
-                    actions.append(self.chat_send(f"Not defending your attack at {enemy_position}"))
-                    self.def_msg_flag = 8
-
-        else:  #enemy_g_dps < 4:
-            own_hp = 0
-            own_dps = 0
-            defenders = []
+        else:  #enemy_g_dps > 20:
             for asset in army:
                 if own_hp < (enemy_hp * 3 + 1) or own_dps < (enemy_dps * 2 + 1):
                     defenders.append(asset)
                     own_hp += asset.health+asset.shield
                     own_dps += asset.ground_dps
+                else:
+                    break
 
             for worker in workers:
                 if own_hp < (enemy_hp * 3 + 1) or own_dps < (enemy_dps * 2 + 1):
                     defenders.append(worker)
                     own_hp += (worker.health+worker.shield)
                     own_dps += worker.ground_dps
+                else:
+                    break
 
-            if own_hp >= enemy_hp and own_dps > enemy_dps:
-                actions.extend(self.issue_group_defence(defenders, enemy_position))
-                actions.append(self.chat_send(f"Location:{enemy_position}"))
-                actions.append(self.chat_send(f"You Attack with:{len(self.attacking_enemy_units)} Units - {enemy_hp} total hp, {enemy_dps} total dps"))
-                actions.append(self.chat_send(f"I Defend with:{len(defenders)} defenders - {own_hp} total hp, {own_dps} total dps"))
+        # check this is on bottom level indentation in the method
+        # this part should be done always in the end of this method
+        if enemy_dps < 4:
+            condition = True
+        else:
+            condition = (own_hp >= enemy_hp and own_dps >= enemy_dps) or self.townhalls.amount <= 2  # or self.clock<120
+        if condition:
+            actions.extend(self.issue_group_defence(defenders, enemy_position))
+            if not self.def_msg_flag:
+                if (len(self.def_force_tags) >= workers.amount+army.amount): # and \
+                        # (own_hp/max(0.1, enemy_dps) > enemy_hp/max(0.1, own_dps) or self.townhalls.amount <= 2):
+                    await self.chat_send(f"You attack at: {enemy_position}")
+                    await self.chat_send(f"All Hands On The Deck (flex) (flex)")
+                else:  # defend with all
+                    await self.chat_send(f"Location: {enemy_position}")
+                    await self.chat_send(f"You Attack with: {len(self.attacking_enemy_units)} Units - {enemy_hp} total hp, {enemy_dps} total dps")
+                    await self.chat_send(f"I Defend with: {len(defenders)} defenders - {own_hp} total hp, {own_dps} total dps")
+                self.def_msg_flag = 8
 
-            #retreat from strong enemy
-            else:
-                if len(self.def_force_tags) > 0:
-                    for def_tag in self.def_force_tags:
-                        self.def_force_tags[def_tag]["retreating"] = 5
-                    actions.append(self.chat_send(f"Your attack is too much atm - Retreating"))
-                elif not self.def_msg_flag:
-                    actions.append(self.chat_send(f"Not defending your attack at {enemy_position}"))
+        # retreat from strong enemy
+        else:
+            if len(self.def_force_tags) > 0:
+                for def_tag in self.def_force_tags:
+                    self.def_force_tags[def_tag]["retreating"] = 5
+                if not self.def_msg_flag:
+                    await self.chat_send(f"Your attack is too much atm - Retreating")
                     self.def_msg_flag = 8
+            elif not self.def_msg_flag:
+                await self.chat_send(f"You Attack with: {len(self.attacking_enemy_units)} Units - {enemy_hp} total hp, {enemy_dps} total dps")
+                await self.chat_send(f"Not defending your attack at {enemy_position}")
+                self.def_msg_flag = 8
+
         #print(f"def_actions with{len(self.def_force_tags)} out of {len(workers)}")
-        await self.do_actions(actions)
+        #print(actions)
+        if len(actions) > 0:
+            await self.do_actions(actions)
 
     async def attack_unit_micro(self):
         """"""
@@ -587,7 +623,7 @@ class MyBot(sc2.BotAI):
         tags = self.def_force_tags
         actions = []
         tb_removed = []
-        min_hp = 6
+        min_hp = 0.1 #TODO: change if needed / create new var for situational min_hp
         for tg in tags:
             unit = self.units.by_tag(tg)
             tags[tg]["hp_curr"] = unit.health + unit.shield #update current hp
@@ -614,6 +650,9 @@ class MyBot(sc2.BotAI):
                 tags[tg]["retreat"] += 1
                 continue
 
+            army = self.units.not_structure.exclude_type(self.w_type).filter(lambda u: u.can_attack_ground)
+            workers = self.workers.filter(lambda w: not w.is_constructing_scv)
+
             #pursue enemy
             close_enemies = self.known_enemy_units.not_flying.closer_than(unit.sight_range, unit.position).sorted_by_distance_to(unit)
             if close_enemies.amount > 0:
@@ -630,7 +669,9 @@ class MyBot(sc2.BotAI):
                     mf = self.state.mineral_field.closest_to(self.townhalls.ready.random)
                     actions.append(unit.gather(mf))
 
-            if ret and hpc > (max_hp_sh/2):
+            if len(self.def_force_tags) >= workers.amount + army.amount:
+                tags[tg]["retreat"] = 0  #dont retreat when everyone is needed in defence
+            elif ret and hpc > (max_hp_sh/2):
                 tags[tg]["retreat"] = 0
 
 
