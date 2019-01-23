@@ -1,16 +1,19 @@
 #TODO: Ideas:
+# add scouting, reactions for scout info
 # change iteration to game time references (under testing) <-- game time is a bit off but reasonable atm
-# add tech tree
+# improve tech tree (and add function: get_tech_needed(BUILDING/UNIT) )
+# use numpy (after the challenge is over - not supported there)
 
 #TODO: flags/vars
-# make flags in one variable and reduce everything at once each step (numpy needed)
 # make __init__ and put object variables in that (DONE)
-# change (tag data) variables in to numpy arrays for quicker operations
+# put all similar variables into collections
 # ideas:
+# make flags in one variable and reduce everything at once each step (numpy needed)
+# change (tag data) variables in to numpy arrays for quicker operations
 # make/use heatmap for enemy locations to defend (maybe with connected components)
 
 #TODO: macro:
-# make unit types other than workers and townhalls
+# make unit types other than workers and townhalls (in progress...)
 # make defence better by updating defence calculations and reinforcing when needed
 # take air hp into account in enemy att_str_calc
 # ideas:
@@ -20,10 +23,12 @@
 # make priority decision based on game state
 
 #TODO: micro:
-# ADD constraint to remove attack group once you got to the target point and no enemies available (DONE)
-# prioritize low hp/ high dps enemies
+# Add constraint to remove attack group once you got to the target point and no enemies available (DONE)
+# add unit micro for ranged units
+# prioritize low hp/ high dps enemies in the attack range
 # make micro more efficient with big army (take nearby units into account when moving)
 # ideas:
+# add unitType specific micro
 # anti-air vs anti-ground, counter units in general
 # use swarm intelligence to micro squads (?)
 # FIXME: make attacking unit to work as well as attacking to point
