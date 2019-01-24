@@ -7,7 +7,6 @@
 # TODO: more consistent way of using variables vs functions
 
 from sc2 import Race
-# from sc2.constants import *
 from sc2.ids.unit_typeid import *
 
 #NOTE: race_workers,race_townhalls and race_gas available for bot (following three will complement the file)
@@ -161,6 +160,7 @@ def train_unit(race, unit, building):  # <-pass building/larva
 
     return action
 
+
 def goal_air_unit(race):
     goal_units = None
     if race == Race.Protoss:
@@ -172,6 +172,7 @@ def goal_air_unit(race):
 
     return goal_units
 
+
 def get_supply_args(race):
     if race == Race.Protoss:
         return (UnitTypeId.PROBE, UnitTypeId.PYLON)
@@ -182,13 +183,15 @@ def get_supply_args(race):
 
     return None
 
-#example: get_available_buildings(Race.Protoss,[UnitTypeId.NEXUS, UnitTypeId.GATEWAY])
+
+# example: get_available_buildings(Race.Protoss,[UnitTypeId.NEXUS, UnitTypeId.GATEWAY])
 def get_available_buildings(race, buildings_ready):
     tree = TECH_TREE[race]
     building_set = set(buildings_ready)
     return search_tree(tree, building_set)
 
-#recursive dict search tree
+
+# recursive dict search tree "all children of the keys"
 def search_tree(dict_tree,keys):
     found_keys = []
     #print(set(keys))
@@ -202,3 +205,40 @@ def search_tree(dict_tree,keys):
     found_keys.extend(list(dict_tree.keys()))
 
     return found_keys
+
+
+#returns tech path for given building or none if no tech path available/defined
+def get_tech_path_needed(race, building):
+    tree = TECH_TREE[race]
+    found, path = search_path(tree, building)
+    if found:
+        return path
+    else:
+        return None
+
+
+# recursive tree search "path to key"
+# return path includes given key if path was found
+# returns 2 GREATERSPIRE since it has two tech routes
+def search_path(dict_tree, key):
+    found_keys = []
+    found = False
+    #print(dict_tree)
+    for k in set(dict_tree.keys()):
+        #print(k)
+        path = []
+        if k == key:
+            found_keys.append(k)
+        elif dict_tree[k]:
+            _, path = search_path(dict_tree[k], key)
+            if len(path) > 0:
+                found_keys.append(k)
+                found_keys.extend(path)
+                # could use break statement if there was only one path to certain tech
+                # however, greater spire needs two routes
+                # (tech trees are small, I don't think the optimization is needed atm)
+    if len(found_keys) > 0:
+        found = True
+    #print(found_keys)
+
+    return found, found_keys

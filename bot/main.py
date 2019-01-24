@@ -194,7 +194,7 @@ class MyBot(sc2.BotAI):
 
             await self.attack_unit_micro()
 
-        if len(self.def_force_tags) > 0 and (min(1, clock_diff) <= (self.clock - int(self.clock))):
+        if len(self.def_force_tags) > 0 and (min(1.0, clock_diff) <= (self.clock - int(self.clock))):
             await self.defend_unit_micro()
 
         if int(self.clock) % 40 == 39 and clock_diff >= self.clock-int(self.clock):
@@ -875,7 +875,8 @@ class MyBot(sc2.BotAI):
                 unfinished_types.union(b.tech_alias)
 
         available_tech = racial.get_available_buildings(self.race, building_types)
-        not_having = (set(available_tech)-(building_types))-unfinished_types
+        tech_path = racial.get_tech_path_needed(self.race, tech_goal)
+        not_having = (set(available_tech).intersection(tech_path)-building_types)-unfinished_types
         print(not_having)
         if tech_goal not in not_having:
             for b_type in not_having:
