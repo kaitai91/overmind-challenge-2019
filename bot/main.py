@@ -80,15 +80,34 @@ class MyBot(sc2.BotAI):
 
         self.pend_supply_flag = 0
 
+        #temps
+        # self.a = 0
+
+        # other - collections
         self.attack_force_tags = dict()  # example: tag[unit.tag] = {"retreat" : retreating (int), "hp_curr":unit.health (int), "hp_prev":unit.health_prev (int), "target": Pos}
         self.def_force_tags = dict()
 
-        #self.expansion_locations = [] #in super, not needed here
+        self.tech_goals = dict()  # dictionary of tech goals and units the first item has priority.
+        # goal[building_type] = {"count": (int), "unit": (unit_type)}
+        # goal[building_type] = {"step": (UnitTypeId)", "prod": (UnitTypeId), "count": (int), "unit": (unit_type)}
+        # step is used to track tech progress,
+        # prod is the goal production building (for specified unit)
+        # count is suggested number of production buildings,
+        # unit is the type of unit wanted from
+
+
+        # self.expansion_locations = [] #in super, not needed here
 
     def _prepare_first_step(self):
         self.expansion_locations
         #print(self.expansion_locations.keys())
         return super()._prepare_first_step()
+
+    def set_tech_goal(self, goal_tech, current_tech, goal_prod_building, prod_b_count, goal_unit):
+        self.tech_goals[goal_tech]: {"step": current_tech,
+                                     "prod": goal_prod_building,
+                                     "count": prod_b_count,
+                                     "unit": goal_unit}
 
     def on_start(self):
         self.th_type = racial.TOWN_HALL_TYPES[self.race]
@@ -97,6 +116,9 @@ class MyBot(sc2.BotAI):
         self.s_args = racial.get_supply_args(self.race) #<- method
         self.tech_tree = racial.TECH_TREE[self.race]
         self.gas_type = racial.GAS_BUILDINGS[self.race]
+        goal_building = list(racial.AIR_TECH[self.race])[0]  # don't "pop" or it's not available next time
+        goal_unit = list(racial.goal_air_unit(self.race))[0]
+        self.set_tech_goal(goal_building, self.th_type, goal_building, 3, goal_unit)
 
     async def on_step(self, iteration):
 
@@ -105,8 +127,24 @@ class MyBot(sc2.BotAI):
 
         self.iteration = iteration
 
-        clock_diff = self.getTimeInSeconds() - self.clock
-        self.clock = self.getTimeInSeconds()
+        clock_diff = self.get_time_in_seconds() - self.clock
+        self.clock = self.get_time_in_seconds()
+
+        # if not self.a:
+        #     self.a = 9
+        #     #print(self.th_type)
+        #     print(f"{self.get_time_in_seconds()}")
+        #     for t in self.units(self.th_type):
+        #         # self.units(HATCHERY).not_ready.exists #wrong
+        #         if not t.noqueue: # not t.noqueue is the same len(t.orders) > 0
+        #             # await self.chat_send(f"building something in {t} at {t.position}, progress: {t.orders[0].progress}")
+        #             print(f"{t.orders[0]}")
+        #             print(f"{t.orders[0].ability}")
+        #             print(f"{t.orders[0].ability.id}")
+        #             if t.orders[0].ability.id is AbilityId.UPGRADETOLAIR_LAIR:  # 1216 == upg to lair
+        #                 await self.chat_send(f"building lair in {t} at {t.position}, progress: {t.orders[0].progress}")
+        # else:
+        #     self.a = max(0, self.a - clock_diff)
 
         # move all flag (time) reductions here
         self.enemy_att_str_save = max(0, self.enemy_att_str_save - clock_diff)
@@ -176,7 +214,9 @@ class MyBot(sc2.BotAI):
 
         if self.kill_move_switch:
             if not self.kill_move_flag:
-                await self.prepare_kill_move()
+                goal_building = list(racial.AIR_TECH[self.race])[0]  # don't "pop" or it's not available next time
+                goal_unit = list(racial.goal_air_unit(self.race))[0]
+                await self.prepare_kill_move(goal_building, goal_unit)
 
         await self.build_supply()
         actions.extend(self.manage_idle_workers())
@@ -231,7 +271,11 @@ class MyBot(sc2.BotAI):
                     self.killed_start_base %= 360360
                 self.attack_flag = 10  # seconds
             if self.attack_flag > 20:
-                actions.extend(self.issue_worker_attack(target,  0.3))
+                army = self.units.not_structure.filter(lambda w: not w.type_id == self.w_type).\
+                                                filter(lambda l: not l.type_id == UnitTypeId.OVERLORD)
+                actions.extend(self.issue_group_attack(army, target))
+                if self.workers.amount > 20:
+                    actions.extend(self.issue_worker_attack(target, 0.35))
             else: #scout attack location
                 if self.workers.amount > 15:
                     group_size = max(4, int(self.workers.amount*0.25)+1)
@@ -240,7 +284,7 @@ class MyBot(sc2.BotAI):
                                              prefer_close_to(target)[:group_size]
                     actions.extend(self.issue_group_attack(random_scout_squad, target))
 
-        if not self.kill_move_switch and self.supply_used > 80:
+        if not self.kill_move_switch and self.supply_used > 55:
             self.kill_move_switch = 1
             await self.chat_send(f"Initializing kill move procedures")
 
@@ -414,7 +458,7 @@ class MyBot(sc2.BotAI):
         self.attacking_enemy_units = []
         for enemy in known_g_enemies:
             if enemy.can_attack_ground:
-                dist = self.units.structure.closest_distance_to(enemy)
+                dist = self.units.structure.ready.closest_distance_to(enemy)
                 if dist < max(12, enemy.ground_range):  # max(16, enemy.radar_range, (enemy.ground_range) + 5):
                     if dist < closest_dist:
                         enemy_position = enemy.position
@@ -508,10 +552,35 @@ class MyBot(sc2.BotAI):
             return
 
         actions = []
+
+        defenders, own_dps, own_hp = await self.create_defence_group(army, enemy_dps, enemy_hp, workers)
+
+        #do we have enough to defend
+        if enemy_dps < 10:
+            condition = True
+        else:
+            condition = (own_hp >= enemy_hp and own_dps >= enemy_dps) or self.townhalls.amount <= 2  # or self.clock<120
+        if condition:
+            actions.extend(self.issue_group_defence(defenders, enemy_position))
+            await self.chat_defending_taunt(enemy_position, workers.amount+army.amount, enemy_hp, own_hp, enemy_dps, own_dps)
+
+        # retreat from strong enemy
+        else:
+            for defender in self.def_force_tags:
+                self.def_force_tags[defender]["retreat"] = 5
+            await self.chat_retreating(enemy_position, enemy_hp, enemy_dps)
+
+        #print(f"def_actions with{len(self.def_force_tags)} out of {len(workers)}")
+        #print(actions)
+        if len(actions) > 0:
+            await self.do_actions(actions)
+
+    async def create_defence_group(self, army, enemy_dps, enemy_hp, workers):
         own_hp = 0
         own_dps = 0
         defenders = []
-        if enemy_dps < 4:  #1 worker or smthing like that
+        if enemy_dps < 4:  # 1 worker or smthing like that
+            # defenders, own_hp, own_dps = self.create_army_group(army, enemy_hp, enemy_dps)
             for asset in army:
                 if own_hp <= (enemy_hp + 1) or own_dps <= (enemy_dps + 1):
                     defenders.append(asset)
@@ -531,7 +600,7 @@ class MyBot(sc2.BotAI):
         elif enemy_dps < 20:
             # more_needed = own_hp < (enemy_hp + 1) or own_dps < (enemy_dps + 1) #try it out
             for asset in army:
-                if own_hp <= (enemy_hp*1.5 + 1) or own_dps <= (enemy_dps*1.5 + 1):
+                if own_hp <= (enemy_hp * 1.5 + 1) or own_dps <= (enemy_dps * 1.5 + 1):
                     defenders.append(asset)
                     own_hp += asset.health + asset.shield
                     own_dps += asset.ground_dps
@@ -539,7 +608,7 @@ class MyBot(sc2.BotAI):
                     break
 
             for worker in workers:
-                if own_hp <= (enemy_hp*1.5 + 1) or own_dps <= (enemy_dps*1.5 + 1):
+                if own_hp <= (enemy_hp * 1.5 + 1) or own_dps <= (enemy_dps * 1.5 + 1):
                     defenders.append(worker)
                     own_hp += (worker.health + worker.shield)
                     own_dps += worker.ground_dps
@@ -547,11 +616,11 @@ class MyBot(sc2.BotAI):
                     break
 
 
-        else:  #enemy_g_dps > 20:
+        else:  # enemy_g_dps > 20:
             for asset in army:
                 if own_hp <= (enemy_hp * 3 + 1) or own_dps <= (enemy_dps * 2 + 1):
                     defenders.append(asset)
-                    own_hp += asset.health+asset.shield
+                    own_hp += asset.health + asset.shield
                     own_dps += asset.ground_dps
                 else:
                     break
@@ -559,47 +628,78 @@ class MyBot(sc2.BotAI):
             for worker in workers:
                 if own_hp <= (enemy_hp * 3 + 1) or own_dps <= (enemy_dps * 2 + 1):
                     defenders.append(worker)
-                    own_hp += (worker.health+worker.shield)
+                    own_hp += (worker.health + worker.shield)
                     own_dps += worker.ground_dps
                 else:
                     break
+        return defenders, own_dps, own_hp
 
-        # check this is on bottom level indentation in the method
-        # this part should be done always in the end of this method
-        if enemy_dps < 10:
-            condition = True
-        else:
-            condition = (own_hp >= enemy_hp and own_dps >= enemy_dps) or self.townhalls.amount <= 2  # or self.clock<120
-        if condition:
-            actions.extend(self.issue_group_defence(defenders, enemy_position))
-            if not self.def_msg_flag:
-                if (len(self.def_force_tags) >= workers.amount+army.amount):  # and \
-                        # (own_hp/max(0.1, enemy_dps) > enemy_hp/max(0.1, own_dps) or self.townhalls.amount <= 2):
-                    await self.chat_send(f"You attack at: {enemy_position}")
-                    await self.chat_send(f"All Hands On The Deck (flex) (flex)")
-                else:  # defend with all
-                    await self.chat_send(f"Location: {enemy_position}")
-                    await self.chat_send(f"You Attack with: {len(self.attacking_enemy_units)} Units - {enemy_hp} total hp, {enemy_dps} total dps")
-                    await self.chat_send(f"I Defend with: {len(defenders)} defenders - {own_hp} total hp, {own_dps} total dps")
-                self.def_msg_flag = 8
+    #TODO: implement the micro function
 
-        # retreat from strong enemy
-        else:
-            if len(self.def_force_tags) > 0:
-                for def_tag in self.def_force_tags:
-                    self.def_force_tags[def_tag]["retreating"] = 5
-                if not self.def_msg_flag:
-                    await self.chat_send(f"Your attack is too much atm - Retreating")
-                    self.def_msg_flag = 8
-            elif not self.def_msg_flag:
-                await self.chat_send(f"You Attack with: {len(self.attacking_enemy_units)} Units - {enemy_hp} total hp, {enemy_dps} total dps")
-                await self.chat_send(f"Not defending your attack at {enemy_position}")
-                self.def_msg_flag = 8
-
-        #print(f"def_actions with{len(self.def_force_tags)} out of {len(workers)}")
-        #print(actions)
-        if len(actions) > 0:
-            await self.do_actions(actions)
+    # async def micro_viking(self, viking, tags):
+    #     """"""
+    #     tag = viking.tag
+    #     actions = []
+    #     tb_removed = False
+    #     min_hp = 22
+    #     tags["hp_curr"] = viking.health + viking.shield #update current hp
+    #     ret = tags["retreat"]
+    #     hpc = tags["hp_curr"]
+    #     hpp = tags["hp_prev"]
+    #     target = tags["target"]
+    #     max_hp_sh = viking.health_max + viking.shield_max
+    #
+    #     if (ret > 4 or hpc < min_hp) and len(self.townhalls.ready) > 0:
+    #         tb_removed.append(tag)
+    #         retreat_point = self.state.mineral_field.closest_to(self.townhalls.ready.random)
+    #         actions.append(viking.move(retreat_point))
+    #         return
+    #
+    #     if hpc < (max(min(max_hp_sh/2, viking.health_max), min_hp)) and hpc < hpp:
+    #         if len(self.townhalls.ready) > 0:
+    #             mf = self.state.mineral_field.closest_to(self.townhalls.ready.random)
+    #             actions.append(viking.gather(mf))
+    #         tags["retreat"] += 1
+    #
+    #
+    #     # else:
+    #     #     if unit.distance_to(target) >= 4:
+    #     #         actions.append(unit.attack(target))
+    #     #
+    #     #     else:
+    #     #         if self.known_enemy_units.exists:
+    #     #             unit.attack(self.known_enemy_units.closest_to(unit).position)
+    #     #         else:
+    #     #             tb_removed.append(tg)
+    #
+    #     # pursue enemy
+    #     close_enemies = self.known_enemy_units.not_flying.closer_than(viking.radar_range, viking.position).sorted_by_distance_to(unit)
+    #     if viking.distance_to(target) >= 25 and close_enemies.amount < 3:
+    #         actions.append(viking.move(target))
+    #
+    #     elif (viking.distance_to(target) >= 2 and tags[tg]["retreat"] < 5): #or len(close_enemies) > 0:
+    #         actions.append(viking.attack(target))
+    #     else:
+    #         tb_removed.append(tag)
+    #         if self.townhalls.ready.amount > 0:
+    #             mf = self.state.mineral_field.closest_to(self.townhalls.ready.random)
+    #             actions.append(unit.gather(mf))
+    #
+    #     if ret and hpc > (max_hp_sh/2):
+    #         tags[tg]["retreat"] = 0
+    #
+    #     # if unit.distance_to(target) < 3:
+    #     #     actions.append(unit.attack(target))
+    #     # else:
+    #     #     tb_removed.append(tg)
+    #
+    #     tags[tg]["hp_prev"] = hpc = tags[tg]["hp_curr"]
+    #     #worker.health_prev = worker.health
+    #
+    #     for tag in tb_removed:
+    #         del(self.attack_force_tags[tag])
+    #
+    #     await self.do_actions(actions)
 
     async def attack_unit_micro(self):
         """"""
@@ -757,7 +857,7 @@ class MyBot(sc2.BotAI):
 
         return actions
 
-    def getTimeInSeconds(self):
+    def get_time_in_seconds(self):
         # returns real time if game is played on "faster"
         return self.state.game_loop * 0.725 * (1 / 16)
 
@@ -801,19 +901,14 @@ class MyBot(sc2.BotAI):
                                          "orig_target": orig}
         return action
 
-    async def prepare_kill_move(self):
+    async def prepare_kill_move(self, goal_building, goal_unit):
         """
 
         """
-        #actions = []
-        #geysers_needed = max(0,min(self.townhalls.ready.amount*2, 10) - self.geysers.amount)
         if self.geysers.amount < 2:
             await self.build_gas()
 
-        goal = list(racial.AIR_TECH[self.race])[0]  # don't "pop" or it's not available next time
-        goal_unit = list(racial.goal_air_unit(self.race))[0]
-
-        progress = await self.get_tech(goal)
+        progress = await self.get_tech(goal_building)
         if not progress:
             print(f"tech progress ?")
             self.kill_move_flag = 3  # try again soon
@@ -822,17 +917,87 @@ class MyBot(sc2.BotAI):
             self.kill_move_flag = 15 #try again after building finish (every building should take more than 30s)
         elif progress == 2:  # tech available
             print(f"tech available")
-            print(goal)
-            print(goal_unit)
-            if goal in racial.PROD_B_TYPES[self.race]:
-                await self.train_units(goal, goal_unit)
+            # print(goal_building)
+            # print(goal_unit)
+            if goal_building in racial.PROD_B_TYPES[self.race]:  #this check shouldn't be needed
+                await self.train_units(goal_building, goal_unit)
             else:  # zerg
                 await self.train_units(self.th_type, goal_unit)
             self.kill_move_flag = 5
         else:
             print(f"something weird happened")
+    async def update_tech_progress(self, tech_goal):
+        progress = self.check_tech_progress(tech_goal)
 
-        #return actions
+
+    async def check_tech_progress(self, tech_goal):
+        """
+
+        :param tech_goal:
+        :return: 2,1,0 - tech progress: (step) ready, in progress, no progress
+        """
+        curr_step = self.tech_goals[tech_goal]["step"]
+
+        ready_buildings = self.units.structure.ready
+        not_ready_buildings = self.units.structure.not_ready
+
+        for b in ready_buildings:
+            found = check_building_type_similarity(curr_step, b)
+            if found:
+                return 2
+
+        #exception handling - MORPH_BUILDINGS
+        if curr_step in racial.MORPH_BUILDINGS:
+            found = self.check_morphing_tech(curr_step)
+            if found: #could return found as well for this instance
+                return 1
+        else:
+            for b in not_ready_buildings:
+                found = check_building_type_similarity(curr_step, b)
+                if found:
+                    return 1
+
+        return 0
+        # if curr_tech in self.units.structure.ready:
+        #     return 2  # tech has progressed
+        # elif curr_tech in self.units.structure.not_ready:
+        #     return 1  # tech in in progress
+        # else:
+        #     return 0  # tech has been lost
+
+    async def check_morphing_tech(self, tech):
+        needed = racial.MORPH_BUILDINGS[tech]
+        # TODO: take dynamically from morph building and assign the right ability too
+        #  (latter not currently implemented in racial)
+        in_progress = False
+
+        gspire = UnitTypeId.GREATERSPIRE
+        hive = UnitTypeId.HIVE
+        lair = UnitTypeId.LAIR
+
+        if tech is gspire:
+            spires = self.units.of_type(needed).ready
+            ability = AbilityId.UPGRADETOGREATERSPIRE_GREATERSPIRE
+            in_progress = ability_in_orders_for_any_unit(ability, spires)
+
+        elif tech is hive:
+            lairs = self.units.of_type(needed).ready
+            ability = AbilityId.UPGRADETOHIVE_HIVE
+            in_progress = ability_in_orders_for_any_unit(ability, lairs)
+
+        elif tech is lair:
+            hatches = self.units.of_type(needed).ready
+            ability = AbilityId.UPGRADETOLAIR_LAIR
+            in_progress = ability_in_orders_for_any_unit(ability, hatches)
+
+        else:
+            pass  #tech exception not implemented
+
+        if in_progress:
+            return 1
+        else:
+            return 0
+
 
 
     async def get_tech(self,tech_goal):
@@ -853,8 +1018,8 @@ class MyBot(sc2.BotAI):
                     return 2
 
         not_ready_buildings = self.units.structure.not_ready
-        print(f"ready: {ready_buildings}")
-        print(f"not ready: {not_ready_buildings}")
+        #print(f"ready: {ready_buildings}")
+        #print(f"not ready: {not_ready_buildings}")
         for b in not_ready_buildings:
             if tech_goal == b.type_id:
                 return 1
@@ -886,9 +1051,10 @@ class MyBot(sc2.BotAI):
                     morph_this = self.units.structure.of_type(racial.MORPH_BUILDINGS[b_type]).ready.random
                     if morph_this:
                         await self.do(morph_this.build(b_type))
+                        print(f"morphing{morph_this} into {b_type}")
+                        print(f"{morph_this.build_progress}")
                     else:
                         break
-                print(f"building {b_type}")
             else:
                 return 1  # all buildings built, progressing towards tech
             return 0  # not sure if progress has been made
@@ -904,3 +1070,44 @@ class MyBot(sc2.BotAI):
                 return 1
         return 0
 
+    async def chat_defending_taunt(self, enemy_position, defender_amount, enemy_hp, own_hp, enemy_dps, own_dps):
+        if not self.def_msg_flag:
+            if (len(self.def_force_tags) >= defender_amount):  # and \
+                # (own_hp/max(0.1, enemy_dps) > enemy_hp/max(0.1, own_dps) or self.townhalls.amount <= 2):
+                await self.chat_send(f"You attack at: {enemy_position}")
+                await self.chat_send(f"All Hands On The Deck (flex) (flex)")
+            else:  # defend with all
+                await self.chat_send(f"Location: {enemy_position}")
+                await self.chat_send(f"You Attack with: {len(self.attacking_enemy_units)} Units - {enemy_hp} total hp, {enemy_dps} total dps")
+                await self.chat_send(f"I Defend with: {defender_amount} defenders - {own_hp} total hp, {own_dps} total dps")
+            self.def_msg_flag = 8
+
+    async def chat_retreating(self, attack_position, enemy_hp, enemy_dps):
+        if len(self.def_force_tags) > 0:
+            for def_tag in self.def_force_tags:
+                self.def_force_tags[def_tag]["retreating"] = 5
+            if not self.def_msg_flag:
+                await self.chat_send(f"Your attack is too much atm - Retreating")
+                self.def_msg_flag = 8
+        elif not self.def_msg_flag:
+            await self.chat_send(f"You Attack with: {len(self.attacking_enemy_units)} Units - {enemy_hp} total hp, {enemy_dps} total dps")
+            await self.chat_send(f"Not defending your attack at {attack_position}")
+            self.def_msg_flag = 8
+
+def ability_in_orders_for_any_unit(ability, units):
+    for u in units:
+        if not u.noqueue:
+            if u.orders[0].ability.id is ability:
+                return True
+    return False
+
+def check_building_type_similarity(building_type, building):
+    if building_type == building.type_id:
+        return True
+    if building.unit_alias:
+        if building_type in building.tech_alias:
+            return True
+    if building.tech_alias:
+        if building_type in building.tech_alias:
+            return True
+    return False
