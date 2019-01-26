@@ -104,10 +104,10 @@ class MyBot(sc2.BotAI):
         return super()._prepare_first_step()
 
     def set_tech_goal(self, goal_tech, current_tech, goal_prod_building, prod_b_count, goal_unit):
-        self.tech_goals[goal_tech]: {"step": current_tech,
-                                     "prod": goal_prod_building,
-                                     "count": prod_b_count,
-                                     "unit": goal_unit}
+        self.tech_goals[goal_tech] = {"step": current_tech,
+                                      "prod": goal_prod_building,
+                                      "count": prod_b_count,
+                                      "unit": goal_unit}
 
     def on_start(self):
         self.th_type = racial.TOWN_HALL_TYPES[self.race]
@@ -116,6 +116,7 @@ class MyBot(sc2.BotAI):
         self.s_args = racial.get_supply_args(self.race) #<- method
         self.tech_tree = racial.TECH_TREE[self.race]
         self.gas_type = racial.GAS_BUILDINGS[self.race]
+
         goal_building = list(racial.AIR_TECH[self.race])[0]  # don't "pop" or it's not available next time
         goal_unit = list(racial.goal_air_unit(self.race))[0]
         self.set_tech_goal(goal_building, self.th_type, goal_building, 3, goal_unit)
@@ -130,22 +131,6 @@ class MyBot(sc2.BotAI):
         clock_diff = self.get_time_in_seconds() - self.clock
         self.clock = self.get_time_in_seconds()
 
-        # if not self.a:
-        #     self.a = 9
-        #     #print(self.th_type)
-        #     print(f"{self.get_time_in_seconds()}")
-        #     for t in self.units(self.th_type):
-        #         # self.units(HATCHERY).not_ready.exists #wrong
-        #         if not t.noqueue: # not t.noqueue is the same len(t.orders) > 0
-        #             # await self.chat_send(f"building something in {t} at {t.position}, progress: {t.orders[0].progress}")
-        #             print(f"{t.orders[0]}")
-        #             print(f"{t.orders[0].ability}")
-        #             print(f"{t.orders[0].ability.id}")
-        #             if t.orders[0].ability.id is AbilityId.UPGRADETOLAIR_LAIR:  # 1216 == upg to lair
-        #                 await self.chat_send(f"building lair in {t} at {t.position}, progress: {t.orders[0].progress}")
-        # else:
-        #     self.a = max(0, self.a - clock_diff)
-
         # move all flag (time) reductions here
         self.enemy_att_str_save = max(0, self.enemy_att_str_save - clock_diff)
         self.def_msg_flag = max(0, self.def_msg_flag - clock_diff)
@@ -158,7 +143,6 @@ class MyBot(sc2.BotAI):
         #     return
 
         # Reinforce defence
-
         self.enemy_att_str_prev = self.enemy_att_str_curr.copy()
         self.enemy_att_str_curr = self.calc_enemy_att_str()
         enemy_att_got_stronger = self.enemy_att_str_max["hp"] < self.enemy_att_str_curr["hp"] and \
@@ -216,7 +200,11 @@ class MyBot(sc2.BotAI):
             if not self.kill_move_flag:
                 goal_building = list(racial.AIR_TECH[self.race])[0]  # don't "pop" or it's not available next time
                 goal_unit = list(racial.goal_air_unit(self.race))[0]
-                await self.prepare_kill_move(goal_building, goal_unit)
+                if self.geysers.amount < 2:
+                    await self.build_gas()
+                await self.manage_tech(goal_building)
+                self.kill_move_flag = 5
+#                await self.prepare_kill_move(goal_building, goal_unit)
 
         await self.build_supply()
         actions.extend(self.manage_idle_workers())
@@ -284,7 +272,7 @@ class MyBot(sc2.BotAI):
                                              prefer_close_to(target)[:group_size]
                     actions.extend(self.issue_group_attack(random_scout_squad, target))
 
-        if not self.kill_move_switch and self.supply_used > 55:
+        if not self.kill_move_switch and self.supply_used > 44:
             self.kill_move_switch = 1
             await self.chat_send(f"Initializing kill move procedures")
 
@@ -926,11 +914,100 @@ class MyBot(sc2.BotAI):
             self.kill_move_flag = 5
         else:
             print(f"something weird happened")
-    async def update_tech_progress(self, tech_goal):
-        progress = self.check_tech_progress(tech_goal)
+
+    async def manage_tech(self, tech_goal):
+        old_step = self.tech_goals[tech_goal]["step"]
+
+        # check tech progress
+        curr_step = self.update_tech_progress(tech_goal)
+
+        # build advancement in tech
+        if curr_step in racial.MORPH_BUILDINGS:
+            pending = self.already_pending(curr_step, all_units=True)
+        else:
+            pending = self.already_pending(curr_step)
+
+        #FIXME: currently build always new highest tech building unless already building one
+        if not pending:  # or old_step != curr_step:
+            print(f"getting {curr_step}")
+            if curr_step not in racial.MORPH_BUILDINGS:
+                if self.race != Race.Protoss:
+                    await self.build(curr_step, near=self.townhalls.ready.random)
+                else:
+                    await self.build(curr_step, near=self.units.of_type(UnitTypeId.PYLON).ready.random)
+            else:
+                all_units_of_type = self.units.structure.of_type(racial.MORPH_BUILDINGS[curr_step]).ready
+                morph_any_of_these = all_units_of_type.random_group_of(all_units_of_type.amount)
+                #print(all_units_of_type)
+                #print(morph_any_of_these)
+                for morph_this in morph_any_of_these:
+                    if morph_this.noqueue:
+                        await self.do(morph_this.build(curr_step))
+                        # print(f"morphing{morph_this} into {curr_step}")
+                        # print(f"{morph_this.build_progress}")
+                        break #only one
 
 
-    async def check_tech_progress(self, tech_goal):
+        # tech available
+        if curr_step == tech_goal:
+
+            # add enough production buildings
+
+            already_building = self.already_pending(tech_goal)
+            needed = self.tech_goals[tech_goal]["count"] - already_building
+            goal_building = self.tech_goals[tech_goal]["prod"]
+            if needed > 0:
+                print(f"""adding {tech_goal}""")
+                for builder in self.workers.prefer_idle.random_group_of(needed):
+                    await self.build(goal_building, near=self.units.structure.not_flying.ready.random,
+                                     unit=builder)
+
+            # start unit production
+            goal_unit = self.tech_goals[tech_goal]["unit"]
+            if self.units.of_type(goal_building).ready.amount > 0:
+                # start producing units
+                # for building in self.units.of_type(self.tech_goals[tech_goal]["prod"]).ready:
+                #     #if building in racial.PROD_B_TYPES[self.race]:  # this check shouldn't be needed
+                #     await self.train_units(building, goal_unit)
+
+                if goal_building in racial.PROD_B_TYPES[self.race]: #non-zerg
+                    await self.train_units(goal_building, goal_unit)
+                else:  # zerg
+                    await self.train_units(self.th_type, goal_unit)
+
+    def update_tech_progress(self, tech_goal):
+        """
+        Updates tech progress by updating current step in tech path
+        :param tech_goal: Building to be built
+        :return: updated current step
+        """
+
+        ready_buildings = uniques_by_attr(self.units.structure.ready)
+        not_ready_buildings = uniques_by_attr(self.units.structure.not_ready)
+        curr_step = self.tech_goals[tech_goal]["step"]
+
+        progress = self.check_tech_progress(tech_goal, ready_buildings, not_ready_buildings)
+
+        if progress == 2 or progress == 0:  # current step ready or no progress
+            whole_path = racial.get_tech_path_needed(self.race, tech_goal)
+            ready_types = [b.type_id for b in ready_buildings]
+            available_tech = racial.get_available_buildings(self.race, ready_types)
+            available_new = set(available_tech).difference(ready_types)
+            available_need = available_new.intersection(whole_path)
+            if len(available_need) > 0:
+                self.tech_goals[tech_goal]["step"] = available_need.pop()  # assume one path for tech
+                curr_step = self.tech_goals[tech_goal]["step"]
+            else:  # no more tech to go further // tech reached
+                print(f"Reached limit in tech {tech_goal} at step {curr_step}")
+                # start building units
+                pass
+
+        elif progress == 1:  # tech progressing
+            pass
+
+        return curr_step
+
+    def check_tech_progress(self, tech_goal, ready_buildings=None, not_ready_buildings=None):
         """
 
         :param tech_goal:
@@ -938,11 +1015,14 @@ class MyBot(sc2.BotAI):
         """
         curr_step = self.tech_goals[tech_goal]["step"]
 
-        ready_buildings = self.units.structure.ready
-        not_ready_buildings = self.units.structure.not_ready
+        if not ready_buildings:
+            ready_buildings = set(self.units.structure.ready)
+
+        if not not_ready_buildings:
+            not_ready_buildings = set(self.units.structure.not_ready)
 
         for b in ready_buildings:
-            found = check_building_type_similarity(curr_step, b)
+            found = compare_building_type(curr_step, b)
             if found:
                 return 2
 
@@ -953,7 +1033,7 @@ class MyBot(sc2.BotAI):
                 return 1
         else:
             for b in not_ready_buildings:
-                found = check_building_type_similarity(curr_step, b)
+                found = compare_building_type(curr_step, b)
                 if found:
                     return 1
 
@@ -965,7 +1045,7 @@ class MyBot(sc2.BotAI):
         # else:
         #     return 0  # tech has been lost
 
-    async def check_morphing_tech(self, tech):
+    def check_morphing_tech(self, tech):
         needed = racial.MORPH_BUILDINGS[tech]
         # TODO: take dynamically from morph building and assign the right ability too
         #  (latter not currently implemented in racial)
@@ -1101,7 +1181,15 @@ def ability_in_orders_for_any_unit(ability, units):
                 return True
     return False
 
-def check_building_type_similarity(building_type, building):
+def check_building_type_similarity(b_type, buildings):
+    for b in buildings:
+        found = compare_building_type(b_type,b)
+        if found:
+            return True
+    else:  # not found
+        return False
+
+def compare_building_type(building_type, building):
     if building_type == building.type_id:
         return True
     if building.unit_alias:
@@ -1111,3 +1199,10 @@ def check_building_type_similarity(building_type, building):
         if building_type in building.tech_alias:
             return True
     return False
+
+def uniques_by_attr(unit_list):
+
+    # getting unique attribute idea from:
+    # https://stackoverflow.com/questions/17347678/list-of-objects-with-a-unique-attribute
+    # dict((obj.thing, obj) for obj in object_list).values()
+    return dict((obj.type_id, obj) for obj in unit_list).values()
