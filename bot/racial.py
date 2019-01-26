@@ -40,7 +40,7 @@ MORPH_UNITS = {UnitTypeId.OVERLORD: UnitTypeId.OVERSEER, UnitTypeId.ZERGLING: Un
                UnitTypeId.ROACH: UnitTypeId.RAVAGER, UnitTypeId.HYDRALISK: UnitTypeId.LURKERMP,
                UnitTypeId.CORRUPTOR: UnitTypeId.BROODLORD}
 MORPH_BUILDINGS = {UnitTypeId.HIVE: UnitTypeId.LAIR, UnitTypeId.LAIR: UnitTypeId.HATCHERY,
-                   UnitTypeId.SPIRE: UnitTypeId.GREATERSPIRE}
+                   UnitTypeId.GREATERSPIRE: UnitTypeId.SPIRE}
 
 UNITS_BY_FACILITY = \
     {Race.Protoss: {UnitTypeId.GATEWAY: GATE_UNITS, UnitTypeId.WARPGATE: GATE_UNITS,
@@ -67,8 +67,7 @@ AIR_TECH = \
     {Race.Protoss: {UnitTypeId.STARGATE},
      Race.Terran: {UnitTypeId.STARPORT},
      Race.Zerg: {UnitTypeId.SPIRE}}
-#TODO: tech tree other way around ("what to build now if I want to build XX later?")
-# or could do this dynamically from tech tree
+
 #
 TECH_TREE = {
     Race.Protoss: {
@@ -192,16 +191,12 @@ def get_available_buildings(race, buildings_ready):
 
 
 # recursive dict search tree "all children of the keys"
-def search_tree(dict_tree,keys):
+def search_tree(dict_tree, keys):
     found_keys = []
-    #print(set(keys))
     for k in set(dict_tree.keys()):
-        #print(k)
         if dict_tree[k]:
             if k in set(keys):
                 found_keys.extend(search_tree(dict_tree[k], keys))
-            # else:
-            #     found_keys.extend(dict_tree[k].keys())
     found_keys.extend(list(dict_tree.keys()))
 
     return found_keys
@@ -219,13 +214,11 @@ def get_tech_path_needed(race, building):
 
 # recursive tree search "path to key"
 # return path includes given key if path was found
-# returns 2 GREATERSPIRE since it has two tech routes
+# returns 2 GREATERSPIREs since it has two required tech paths
 def search_path(dict_tree, key):
     found_keys = []
     found = False
-    #print(dict_tree)
     for k in set(dict_tree.keys()):
-        #print(k)
         path = []
         if k == key:
             found_keys.append(k)
