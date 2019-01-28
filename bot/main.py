@@ -18,12 +18,16 @@
 # take air hp into account in enemy att_str_calc
 # ideas:
 # multiple attack/defence groups
+# implement anti-air defence
 # make priority queue for different macro actions
 # decide which actions can be skipped every now and then
-# make priority decision based on game state
+# make priority decision based on game state (consider this with/instead of timed functions)
+# prioritizing buildings/tech/workers/army <-- implement this
 
 #TODO: micro:
+# IMPORTANT: Viking micro (mode change depending on enemy unit at minimum - air/ground)
 # Add constraint to remove attack group once you got to the target point and no enemies available (DONE)
+# fix retreat (micro) for other than workers
 # add unit micro for ranged units
 # prioritize low hp/ high dps enemies in the attack range
 # make micro more efficient with big army (take nearby units into account when moving)
@@ -80,14 +84,11 @@ class MyBot(sc2.BotAI):
 
         self.pend_supply_flag = 0
 
-        #temps
-        # self.a = 0
-
         # other - collections
         self.attack_force_tags = dict()  # example: tag[unit.tag] = {"retreat" : retreating (int), "hp_curr":unit.health (int), "hp_prev":unit.health_prev (int), "target": Pos}
         self.def_force_tags = dict()
 
-        self.tech_goals = dict()  # dictionary of tech goals and units the first item has priority.
+        self.tech_goals = dict()  # dictionary of tech goals and units (the first item has priority).
         # goal[building_type] = {"count": (int), "unit": (unit_type)}
         # goal[building_type] = {"step": (UnitTypeId)", "prod": (UnitTypeId), "count": (int), "unit": (unit_type)}
         # step is used to track tech progress,
@@ -104,6 +105,8 @@ class MyBot(sc2.BotAI):
         return super()._prepare_first_step()
 
     def set_tech_goal(self, goal_tech, current_tech, goal_prod_building, prod_b_count, goal_unit):
+        if self.race == Race.Zerg: #for zerg production is always in hatcheries
+            goal_prod_building = self.th_type
         self.tech_goals[goal_tech] = {"step": current_tech,
                                       "prod": goal_prod_building,
                                       "count": prod_b_count,
@@ -117,9 +120,10 @@ class MyBot(sc2.BotAI):
         self.tech_tree = racial.TECH_TREE[self.race]
         self.gas_type = racial.GAS_BUILDINGS[self.race]
 
+        #for now, simple goal and winning strategy "mass air" after getting good economy
         goal_building = list(racial.AIR_TECH[self.race])[0]  # don't "pop" or it's not available next time
         goal_unit = list(racial.goal_air_unit(self.race))[0]
-        self.set_tech_goal(goal_building, self.th_type, goal_building, 3, goal_unit)
+        self.set_tech_goal(goal_building, self.th_type, goal_building, 5, goal_unit)
 
     async def on_step(self, iteration):
 
@@ -153,11 +157,11 @@ class MyBot(sc2.BotAI):
 
         if enemy_att_got_stronger:
             self.enemy_att_str_save = 20
-            print("max att preserved")
+            # print("max att preserved")
 
         if not self.enemy_att_str_save:
-            if self.enemy_att_str_max["hp"] > 0.9:
-                print("max reset")
+            # if self.enemy_att_str_max["hp"] > 0.9:
+                # print("max reset")
             #never erase enemy last position (where they did attack last time)
             self.enemy_att_str_max = {"hp": 0, "g_dps": 0, "pos": self.enemy_att_str_max["pos"]}
 
@@ -193,23 +197,46 @@ class MyBot(sc2.BotAI):
             self.w_dist_flag = 0.8
             # self.d_task = True
             await self.distribute_workers()
+
+        if self.minerals > 150 and self.vespene / self.minerals <= 0.8: #vespene count is less than 80% of minerals
+            #following snippet adpoted from cyclone_push.py
+            for a in self.units(self.gas_type):
+                if a.assigned_harvesters < a.ideal_harvesters:
+                    w = self.workers.closer_than(5, a)
+                    if w.exists:
+                        actions.append(w.random.gather(a))
+            if (self.vespene / self.minerals) <= 0.5 and self.minerals >= 1000:
+                await self.build_gas(int(self.units.of_type(self.gas_type).amount/2) + 2) #add extra gas if gas-starving
             # self.d_task = False
             # return
 
         if self.kill_move_switch:
+            # set desired amount of workers based on # of expansion (in between 24, 88)
+            self.worker_limit == max(24, min(len(self.owned_expansions) * 24, 88))
             if not self.kill_move_flag:
-                goal_building = list(racial.AIR_TECH[self.race])[0]  # don't "pop" or it's not available next time
-                goal_unit = list(racial.goal_air_unit(self.race))[0]
-                if self.geysers.amount < 2:
-                    await self.build_gas()
-                await self.manage_tech(goal_building)
-                self.kill_move_flag = 5
-#                await self.prepare_kill_move(goal_building, goal_unit)
+                    goal_building = list(racial.AIR_TECH[self.race])[0]  # don't "pop" or it's not available next time
+                    # goal_unit = list(racial.goal_air_unit(self.race))[0]
+                    if self.geysers.amount <= 4:
+                        await self.build_gas()
+                    # check that bot has pylons (IF PROTOSS) before building stuff (move to other part later(?))
+                    if self.race == Race.Protoss:
+                        if self.units.of(UnitTypeId.PYLON).amount > 0:
+                            await self.manage_tech(goal_building)
+                        else:
+                            await self.build_supply()
+                    else:
+                        await self.manage_tech(goal_building)
+                    self.kill_move_flag = 5
+    #                await self.prepare_kill_move(goal_building, goal_unit) #TO BE REMOVED
 
         await self.build_supply()
         actions.extend(self.manage_idle_workers())
-        if self.pend_supply_flag != 1 and self.workers.amount < self.worker_limit:
-            await self.train_workers()
+        if self.pend_supply_flag != 1:
+            if self.workers.amount < (self.worker_limit - self.townhalls.amount):
+                await self.train_workers()
+            elif self.minerals > 1000 and self.workers.amount < 160:  #hard coded limit for workers
+                await self.train_workers()
+
 
         #FOR MICRO
         self.manage_att_def_groups()
@@ -232,7 +259,7 @@ class MyBot(sc2.BotAI):
         if not self.killed_start_base:
             shortest_dist = self.units.closest_distance_to(self.enemy_start_locations[0])
             if shortest_dist <= 2:
-                print("killed enemy starting base")
+                # print("killed enemy starting base")
                 self.killed_start_base = 1
 
         if self.supply_used > 110 and not self.attack_flag and \
@@ -274,6 +301,7 @@ class MyBot(sc2.BotAI):
 
         if not self.kill_move_switch and self.supply_used > 44:
             self.kill_move_switch = 1
+
             await self.chat_send(f"Initializing kill move procedures")
 
         if self.supply_used > 190: #attack when no units attacking and close to max supply
@@ -306,11 +334,12 @@ class MyBot(sc2.BotAI):
 
     async def expand(self):
         # expand
-        if (self.units(self.th_type).amount < 5 or self.workers.amount > 75) and self.can_afford(self.th_type):
+        if (self.units(self.th_type).amount < 8 or self.workers.amount > 75) and self.can_afford(self.th_type):
             self.expand_flag = 5
-            await self.expand_now(closest_to=self.workers.random.position)
-            if self.townhalls.amount < 5:
-                await self.chat_send(f"Trying to expand!")
+            if self.already_pending(self.th_type) < 3:  # expand "only" 3 locations at once
+                await self.expand_now(closest_to=self.workers.random.position)
+                if self.townhalls.amount < 4:
+                    await self.chat_send(f"Trying to expand!")
         # not yet
         else:
             self.expand_flag = 1  # <-- try again soon
@@ -416,7 +445,9 @@ class MyBot(sc2.BotAI):
     async def build_gas(self, max_amount=3):
         #following adopted and modified from mass_reaper.py in examples/terran
         actions = []
-        for th in self.townhalls.random_group_of(max_amount):
+        own_bases = list(self.owned_expansions.values())
+        for th in own_bases[:max_amount]:
+#            for th in self.townhalls.random_group_of(max_amount):
             vgs = self.state.vespene_geyser.closer_than(10, th)
             for vg in vgs:
                 if await self.can_place(self.gas_type, vg.position) and self.can_afford(self.gas_type):
@@ -473,12 +504,12 @@ class MyBot(sc2.BotAI):
                 enemy_position = self.enemy_att_str_curr["pos"]
             elif self.enemy_att_str_max["pos"]:
                 enemy_position = self.enemy_att_str_max["pos"]
-                print("enemy position taken from max")
+                # print("enemy position taken from max")
         enemy_att_str = {"hp": total_hp, "g_dps": enemy_g_dps, "pos": enemy_position}
         return enemy_att_str
 
     def manage_att_def_groups(self):
-        tags = [unit.tag for unit in self.units(self.w_type)]  # get tags for workers TODO: include army units
+        tags = [unit.tag for unit in self.units.not_structure.ready]  # get tags for units TODO: include army units
         diff_a = set(self.attack_force_tags.keys()).difference(set(tags))  # units not in self.units
         diff_d = set(self.def_force_tags.keys()).difference(set(tags))
         if len(self.def_force_tags) > 0 and len(diff_d) > 0:
@@ -497,7 +528,7 @@ class MyBot(sc2.BotAI):
         #shorten names
         m = self.enemy_att_str_max
         if not m["pos"]:
-            print("no position available - reinforce defence later")
+            # print("no position available - reinforce defence later")
             return
 
         c = self.enemy_att_str_curr
@@ -527,9 +558,9 @@ class MyBot(sc2.BotAI):
     async def assign_defence(self, enemy_hp, enemy_dps, enemy_position):
 
         #print("trying to assign defence")
-        army = self.units.not_structure.exclude_type(self.w_type).filter(lambda u: u.can_attack_ground)
+        army = self.units.ready.tags_not_in(self.def_force_tags).not_structure.exclude_type(self.w_type).filter(lambda u: u.can_attack_ground)
         #sort workers: high hp and close distance preferred
-        workers = self.workers.filter(lambda w: not w.is_constructing_scv).\
+        workers = self.workers.ready.tags_not_in(self.def_force_tags).filter(lambda w: not w.is_constructing_scv).\
             sorted(lambda w: -(w.health+w.shield)).prefer_close_to(enemy_position)
         #combined_tags = set(self.attack_force_tags.keys()).union(set(self.def_force_tags.keys()))
 
@@ -558,8 +589,6 @@ class MyBot(sc2.BotAI):
                 self.def_force_tags[defender]["retreat"] = 5
             await self.chat_retreating(enemy_position, enemy_hp, enemy_dps)
 
-        #print(f"def_actions with{len(self.def_force_tags)} out of {len(workers)}")
-        #print(actions)
         if len(actions) > 0:
             await self.do_actions(actions)
 
@@ -779,8 +808,11 @@ class MyBot(sc2.BotAI):
             #TODO: fix this for non-workers
             if (ret > 4 or hpc < min_hp) and len(self.townhalls.ready) > 0:
                 tb_removed.append(tg)
-                mf = self.state.mineral_field.closest_to(self.townhalls.ready.random)
-                actions.append(unit.gather(mf))
+                if unit.is_carrying_minerals or unit.is_carrying_vespene:
+                    actions.append(unit.return_resource(self.townhalls.ready.random))
+                else:
+                    mf = self.state.mineral_field.closest_to(self.townhalls.ready.random)
+                    actions.append(unit.gather(mf))
                 continue
             if hpc < (max(min(max_hp_sh/2, unit.health_max), min_hp)) and hpc < hpp:
                 if len(self.townhalls) > 0:
@@ -898,13 +930,13 @@ class MyBot(sc2.BotAI):
 
         progress = await self.get_tech(goal_building)
         if not progress:
-            print(f"tech progress ?")
+            # print(f"tech progress ?")
             self.kill_move_flag = 3  # try again soon
         elif progress == 1:
-            print(f"tech progress 1")
+            # print(f"tech progress 1")
             self.kill_move_flag = 15 #try again after building finish (every building should take more than 30s)
         elif progress == 2:  # tech available
-            print(f"tech available")
+            # print(f"tech available")
             # print(goal_building)
             # print(goal_unit)
             if goal_building in racial.PROD_B_TYPES[self.race]:  #this check shouldn't be needed
@@ -913,13 +945,17 @@ class MyBot(sc2.BotAI):
                 await self.train_units(self.th_type, goal_unit)
             self.kill_move_flag = 5
         else:
-            print(f"something weird happened")
+            pass
+            # print(f"something weird happened")
 
     async def manage_tech(self, tech_goal):
         old_step = self.tech_goals[tech_goal]["step"]
+        ready_buildings = uniques_by_attr(self.units.structure.ready)
+        ready_types = [b.type_id for b in ready_buildings]
+        not_ready_buildings = uniques_by_attr(self.units.structure.not_ready)
 
         # check tech progress
-        curr_step = self.update_tech_progress(tech_goal)
+        curr_step = self.update_tech_progress(tech_goal, ready_buildings, not_ready_buildings)
 
         # build advancement in tech
         if curr_step in racial.MORPH_BUILDINGS:
@@ -927,9 +963,9 @@ class MyBot(sc2.BotAI):
         else:
             pending = self.already_pending(curr_step)
 
-        #FIXME: currently build always new highest tech building unless already building one
-        if not pending:  # or old_step != curr_step:
-            print(f"getting {curr_step}")
+        #FIXME: currently build always new highest tech building unless already building one (DONE)
+        if not pending and (curr_step not in ready_types):  # or old_step != curr_step:
+            # print(f"getting {curr_step}")
             if curr_step not in racial.MORPH_BUILDINGS:
                 if self.race != Race.Protoss:
                     await self.build(curr_step, near=self.townhalls.ready.random)
@@ -951,39 +987,45 @@ class MyBot(sc2.BotAI):
         # tech available
         if curr_step == tech_goal:
 
-            # add enough production buildings
-
-            already_building = self.already_pending(tech_goal)
-            needed = self.tech_goals[tech_goal]["count"] - already_building
-            goal_building = self.tech_goals[tech_goal]["prod"]
-            if needed > 0:
-                print(f"""adding {tech_goal}""")
-                for builder in self.workers.prefer_idle.random_group_of(needed):
-                    await self.build(goal_building, near=self.units.structure.not_flying.ready.random,
-                                     unit=builder)
-
+            prod_goal = self.tech_goals[tech_goal]["prod"]
             # start unit production
             goal_unit = self.tech_goals[tech_goal]["unit"]
-            if self.units.of_type(goal_building).ready.amount > 0:
+            if self.units.of_type(prod_goal).ready.amount > 0:
                 # start producing units
                 # for building in self.units.of_type(self.tech_goals[tech_goal]["prod"]).ready:
                 #     #if building in racial.PROD_B_TYPES[self.race]:  # this check shouldn't be needed
                 #     await self.train_units(building, goal_unit)
 
-                if goal_building in racial.PROD_B_TYPES[self.race]: #non-zerg
-                    await self.train_units(goal_building, goal_unit)
+                if prod_goal in racial.PROD_B_TYPES[self.race]:  # non-zerg
+                    await self.train_units(prod_goal, goal_unit)
                 else:  # zerg
                     await self.train_units(self.th_type, goal_unit)
 
-    def update_tech_progress(self, tech_goal):
+            # add enough production buildings
+            already_building = self.already_pending(prod_goal)
+            already_ready = self.units.structure.ready.of_type(prod_goal).amount
+            needed = self.tech_goals[tech_goal]["count"] - already_building - already_ready
+            if needed > 0:
+                # print(f"""adding {prod_goal}""")
+                for builder in self.workers.prefer_idle.random_group_of(needed):
+                    if self.race != Race.Protoss:
+                        await self.build(prod_goal, near=self.units.structure.not_flying.ready.random,
+                                         unit=builder)
+                    else:
+                        await self.build(prod_goal, near=self.units.of_type(UnitTypeId.PYLON).ready.random, unit=builder)
+
+
+    def update_tech_progress(self, tech_goal, ready_buildings=None, not_ready_buildings=None):
         """
         Updates tech progress by updating current step in tech path
         :param tech_goal: Building to be built
         :return: updated current step
         """
 
-        ready_buildings = uniques_by_attr(self.units.structure.ready)
-        not_ready_buildings = uniques_by_attr(self.units.structure.not_ready)
+        if not ready_buildings:
+            ready_buildings = uniques_by_attr(self.units.structure.ready)
+        if not  not_ready_buildings:
+            not_ready_buildings = uniques_by_attr(self.units.structure.not_ready)
         curr_step = self.tech_goals[tech_goal]["step"]
 
         progress = self.check_tech_progress(tech_goal, ready_buildings, not_ready_buildings)
@@ -998,7 +1040,7 @@ class MyBot(sc2.BotAI):
                 self.tech_goals[tech_goal]["step"] = available_need.pop()  # assume one path for tech
                 curr_step = self.tech_goals[tech_goal]["step"]
             else:  # no more tech to go further // tech reached
-                print(f"Reached limit in tech {tech_goal} at step {curr_step}")
+                # print(f"Reached limit in tech {tech_goal} at step {curr_step}")
                 # start building units
                 pass
 
@@ -1122,7 +1164,7 @@ class MyBot(sc2.BotAI):
         available_tech = racial.get_available_buildings(self.race, building_types)
         tech_path = racial.get_tech_path_needed(self.race, tech_goal)
         not_having = (set(available_tech).intersection(tech_path)-building_types)-unfinished_types
-        print(not_having)
+        # print(not_having)
         if tech_goal not in not_having:
             for b_type in not_having:
                 if b_type not in racial.MORPH_BUILDINGS:
@@ -1131,8 +1173,8 @@ class MyBot(sc2.BotAI):
                     morph_this = self.units.structure.of_type(racial.MORPH_BUILDINGS[b_type]).ready.random
                     if morph_this:
                         await self.do(morph_this.build(b_type))
-                        print(f"morphing{morph_this} into {b_type}")
-                        print(f"{morph_this.build_progress}")
+                        # print(f"morphing{morph_this} into {b_type}")
+                        # print(f"{morph_this.build_progress}")
                     else:
                         break
             else:
@@ -1159,7 +1201,7 @@ class MyBot(sc2.BotAI):
             else:  # defend with all
                 await self.chat_send(f"Location: {enemy_position}")
                 await self.chat_send(f"You Attack with: {len(self.attacking_enemy_units)} Units - {enemy_hp} total hp, {enemy_dps} total dps")
-                await self.chat_send(f"I Defend with: {defender_amount} defenders - {own_hp} total hp, {own_dps} total dps")
+                # await self.chat_send(f"I Defend with: {defender_amount} defenders - {own_hp} total hp, {own_dps} total dps")
             self.def_msg_flag = 8
 
     async def chat_retreating(self, attack_position, enemy_hp, enemy_dps):
@@ -1170,7 +1212,7 @@ class MyBot(sc2.BotAI):
                 await self.chat_send(f"Your attack is too much atm - Retreating")
                 self.def_msg_flag = 8
         elif not self.def_msg_flag:
-            await self.chat_send(f"You Attack with: {len(self.attacking_enemy_units)} Units - {enemy_hp} total hp, {enemy_dps} total dps")
+            # await self.chat_send(f"You Attack with: {len(self.attacking_enemy_units)} Units - {enemy_hp} total hp, {enemy_dps} total dps")
             await self.chat_send(f"Not defending your attack at {attack_position}")
             self.def_msg_flag = 8
 
