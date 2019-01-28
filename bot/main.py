@@ -223,7 +223,8 @@ class MyBot(sc2.BotAI):
                         if self.units.of_type(UnitTypeId.PYLON).ready.amount > 0:
                             await self.manage_tech(goal_building)
                         else:
-                            await self.build_supply()
+                            if not self.already_pending(UnitTypeId.PYLON):
+                                await self.build_supply()
                     else:
                         await self.manage_tech(goal_building)
                     self.kill_move_flag = 5
