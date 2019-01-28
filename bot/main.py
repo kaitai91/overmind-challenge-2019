@@ -220,7 +220,7 @@ class MyBot(sc2.BotAI):
                         await self.build_gas()
                     # check that bot has pylons (IF PROTOSS) before building stuff (move to other part later(?))
                     if self.race == Race.Protoss:
-                        if self.units.of(UnitTypeId.PYLON).amount > 0:
+                        if self.units.of_type(UnitTypeId.PYLON).amount > 0:
                             await self.manage_tech(goal_building)
                         else:
                             await self.build_supply()
