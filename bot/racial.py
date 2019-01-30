@@ -1,7 +1,7 @@
 
 # Racial macro management module
 # (c) kaitai
-# Includes Townhalls, Production Buildings and Workers
+# Includes Townhalls, Production Buildings, Workers, Tech tree, and more
 # TODO: Add unit production
 # TODO: think whether text strings are sensible and maybe remove them
 # TODO: more consistent way of using variables vs functions
@@ -35,10 +35,10 @@ LARVA_UNITS = {"Drone": UnitTypeId.DRONE, "Overlord": UnitTypeId.OVERLORD, "Muta
                "Zergling": UnitTypeId.ZERGLING, "Infestor": UnitTypeId.INFESTOR, "Roach": UnitTypeId.ROACH,
                "Swarm Host": UnitTypeId.SWARMHOSTMP, "Hydralisk": UnitTypeId.HYDRALISK, "Viper": UnitTypeId.VIPER,
                "Corruptor": UnitTypeId.CORRUPTOR, "Ultralisk": UnitTypeId.ULTRALISK}
-# what (zerg) unit morphs into which unit
-MORPH_UNITS = {UnitTypeId.OVERLORD: UnitTypeId.OVERSEER, UnitTypeId.ZERGLING: UnitTypeId.BANELING,
-               UnitTypeId.ROACH: UnitTypeId.RAVAGER, UnitTypeId.HYDRALISK: UnitTypeId.LURKERMP,
-               UnitTypeId.CORRUPTOR: UnitTypeId.BROODLORD}
+# what (zerg) unit morphs into which (specified) unit
+MORPH_UNITS = {UnitTypeId.OVERSEER: UnitTypeId.OVERLORD, UnitTypeId.BANELING: UnitTypeId.ZERGLING,
+               UnitTypeId.RAVAGER: UnitTypeId.ROACH, UnitTypeId.LURKERMP: UnitTypeId.HYDRALISK,
+               UnitTypeId.BROODLORD: UnitTypeId.CORRUPTOR}
 MORPH_BUILDINGS = {UnitTypeId.HIVE: UnitTypeId.LAIR, UnitTypeId.LAIR: UnitTypeId.HATCHERY,
                    UnitTypeId.GREATERSPIRE: UnitTypeId.SPIRE}
 
@@ -235,3 +235,4 @@ def search_path(dict_tree, key):
     #print(found_keys)
 
     return found, found_keys
+
