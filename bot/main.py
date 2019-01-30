@@ -72,6 +72,7 @@ class MyBot(sc2.BotAI):
 
         # flags
         self.d_task = False #demanding task
+        self.racial_macro_flag = 0
         self.expand_flag = 0
         self.w_dist_flag = 0
         self.attack_flag = 0
@@ -85,8 +86,21 @@ class MyBot(sc2.BotAI):
         self.pend_supply_flag = 0
 
         # other - collections
-        self.attack_force_tags = dict()  # example: tag[unit.tag] = {"retreat" : retreating (int), "hp_curr":unit.health (int), "hp_prev":unit.health_prev (int), "target": Pos}
+        self.attack_force_tags = dict()
+        # example: tag[unit.tag] =  # unit tag
+        # {"retreat" : retreating (int), # <5 go ahead and fight else retreat
+        # "hp_curr":unit.health (int),
+        # "hp_prev":unit.health_prev (int),
+        # "target": Pos} # attack position
+
         self.def_force_tags = dict()
+        # example: tag[unit.tag] =  # unit tag
+        # {"retreat" : retreating (int), # <5 go ahead and fight else retreat
+        # "hp_curr":unit.health (int),
+        # "hp_prev":unit.health_prev (int),
+        # "target": Pos, # defending position / enemy unit position
+        # "orig": Pos} # original defending position
+
 
         self.tech_goals = dict()  # dictionary of tech goals and units (the first item has priority).
         # goal[building_type] = {"count": (int), "unit": (unit_type)}
@@ -142,6 +156,7 @@ class MyBot(sc2.BotAI):
         self.expand_flag = max(0, self.expand_flag - clock_diff)
         self.w_dist_flag = max(0, self.w_dist_flag - clock_diff)
         self.kill_move_flag = max(0, self.kill_move_flag - clock_diff)
+        self.racial_macro_flag = max(0, self.racial_macro_flag - clock_diff)
 
         # if self.d_task:  # wait task to finish to avoid timeouts (does this actually work?)
         #     return
@@ -197,6 +212,9 @@ class MyBot(sc2.BotAI):
             self.w_dist_flag = 0.8
             # self.d_task = True
             await self.distribute_workers()
+        if not self.racial_macro_flag:
+            actions.extend(self.macro_boost(self.race))
+            self.racial_macro_flag = 1.23 #arbitrary cooldown
 
         if self.minerals > 150 and self.vespene / self.minerals <= 0.8: #vespene count is less than 80% of minerals
             #following snippet adpoted from cyclone_push.py
@@ -271,6 +289,9 @@ class MyBot(sc2.BotAI):
             # target = None  #not needed
             if not self.killed_start_base:
                 target = self.enemy_start_locations[0]
+                enemy_buildings = self.known_enemy_structures().not_flying
+                if enemy_buildings.amount > 0:
+                    target = enemy_buildings.closest_to(self.townhalls.random.position)
                 self.attack_flag = 120  # seconds
             elif len(self.known_enemy_structures.not_flying) > 0:
                 target = self.known_enemy_structures.not_flying[0].position
@@ -287,20 +308,29 @@ class MyBot(sc2.BotAI):
                     self.killed_start_base %= 360360
                 self.attack_flag = 10  # seconds
             if self.attack_flag > 20:
-                army = self.units.not_structure.filter(lambda w: not w.type_id == self.w_type).\
-                                                filter(lambda l: not l.type_id == UnitTypeId.OVERLORD)
+                army = self.units.not_structure.exclude_type([self.w_type, UnitTypeId.OVERLORD, UnitTypeId.MULE])
                 actions.extend(self.issue_group_attack(army, target))
+                if army.amount > 4:
+                    actions.extend(self.issue_group_attack(army, target))
                 if self.workers.amount > 20:
                     actions.extend(self.issue_worker_attack(target, 0.35))
             else: #scout attack location
-                if self.workers.amount > 15:
+
+                army = self.units.not_structure.exclude_type([self.w_type, UnitTypeId.OVERLORD, UnitTypeId.MULE])
+                if army.amount > 8:
+                    group_size = max(4, army.amount)
+                    await self.chat_send(f"You can run, but You can't hide! (devil)")
+                    random_scout_squad = army.prefer_close_to(target)[:group_size]
+                    actions.extend(self.issue_group_attack(random_scout_squad, target))
+
+                elif self.workers.amount > 15:
                     group_size = max(4, int(self.workers.amount*0.25)+1)
                     await self.chat_send(f"You can run, but You can't hide! (devil)")
                     random_scout_squad = self.workers.filter(lambda w: not w.is_constructing_scv).\
                                              prefer_close_to(target)[:group_size]
                     actions.extend(self.issue_group_attack(random_scout_squad, target))
 
-        if not self.kill_move_switch and self.supply_used > 44:
+        if not self.kill_move_switch and self.supply_used > 24:
             self.kill_move_switch = 1
 
             await self.chat_send(f"Initializing kill move procedures")
@@ -719,6 +749,115 @@ class MyBot(sc2.BotAI):
     #
     #     await self.do_actions(actions)
 
+    # from mass_reaper.py
+    # stolen and modified from position.py
+    def neighbors4(self, position, distance=1):
+        p = position
+        d = distance
+        return {
+            position.Point2((p.x - d, p.y)),
+            position.Point2((p.x + d, p.y)),
+            position.Point2((p.x, p.y - d)),
+            position.Point2((p.x, p.y + d)),
+        }
+
+    # stolen and modified from position.py
+    def neighbors8(self, position, distance=1):
+        p = position
+        d = distance
+        return self.neighbors4(position, distance) | {
+            position.Point2((p.x - d, p.y - d)),
+            position.Point2((p.x - d, p.y + d)),
+            position.Point2((p.x + d, p.y - d)),
+            position.Point2((p.x + d, p.y + d)),
+        }
+
+    # this checks if a ground unit can walk on a Point2 position
+    def inPathingGrid(self, pos):
+        # returns True if it is possible for a ground unit to move to pos - doesnt seem to work on ramps or near edges
+        pos = pos.position.to2.rounded
+        return self._game_info.pathing_grid[(pos)] != 0
+
+    async def ranged_unit_micro(self, unit):
+        action = None
+        #adopted and modified from mass_reaper.py
+        # move to range 15 of closest unit if reaper is below 20 hp and not regenerating
+        enemyThreatsClose = self.known_enemy_units.filter(lambda x: x.can_attack_ground).closer_than(15, unit)  # threats that can attack the reaper
+        if unit.health_percentage < 2 / 5 and enemyThreatsClose.exists:
+            retreatPoints = self.neighbors8(unit.position, distance=2) | self.neighbors8(unit.position, distance=4)
+            # filter points that are pathable
+            retreatPoints = {x for x in retreatPoints if self.inPathingGrid(x)}
+            if retreatPoints:  # maybe this can be done more efficiently (pathing)
+                closestEnemy = enemyThreatsClose.closest_to(unit)
+                retreatPoint = closestEnemy.position.furthest(retreatPoints)
+                action = unit.move(retreatPoint)
+                return action  # dont execute any of the following
+
+        # reaper is ready to attack, shoot nearest ground unit
+        enemyGroundUnits = self.known_enemy_units.not_flying.closer_than(unit.ground_range, unit)
+        if unit.weapon_cooldown == 0 and enemyGroundUnits.exists:
+            enemyGroundUnits = enemyGroundUnits.sorted(lambda x: x.distance_to(unit))
+            closestEnemy = enemyGroundUnits[0]
+            action = unit.attack(closestEnemy)
+            return action  # dont execute any of the following
+
+        # attack is on cooldown, check if grenade is on cooldown, if not then throw it to furthest enemy in range 5
+        # use this for different units' special attacks and abilities
+        # reaperGrenadeRange = self._game_data.abilities[AbilityId.KD8CHARGE_KD8CHARGE.value]._proto.cast_range
+        # enemyGroundUnitsInGrenadeRange = self.known_enemy_units.not_structure.not_flying.exclude_type(
+        #     [UnitTypeId.LARVA, UnitTypeId.EGG]).closer_than(reaperGrenadeRange, unit)
+        # if enemyGroundUnitsInGrenadeRange.exists and (unit.is_attacking or unit.is_moving):
+        #     # if AbilityId.KD8CHARGE_KD8CHARGE in abilities, we check that to see if the reaper grenade is off cooldown
+        #     abilities = (await self.get_available_abilities(unit))
+        #     enemyGroundUnitsInGrenadeRange = enemyGroundUnitsInGrenadeRange.sorted(lambda x: x.distance_to(unit),
+        #                                                                            reverse=True)
+        #     furthestEnemy = None
+        #     for enemy in enemyGroundUnitsInGrenadeRange:
+        #         if await self.can_cast(unit, AbilityId.KD8CHARGE_KD8CHARGE, enemy, cached_abilities_of_unit=abilities):
+        #             furthestEnemy = enemy
+        #             break
+        #     if furthestEnemy:
+        #         self.combinedActions.append(unit(AbilityId.KD8CHARGE_KD8CHARGE, furthestEnemy))
+        #         return  # continue for loop, don't execute any of the following
+
+
+        # move towards to max unit range if enemy is closer than 4
+        enemyThreatsVeryClose = self.known_enemy_units.filter(lambda x: x.can_attack_ground).\
+            closer_than(unit.ground_range - 0.5, unit)  # hardcoded attackrange minus 0.5
+        # threats that can attack the reaper
+        if unit.weapon_cooldown != 0 and enemyThreatsVeryClose.exists:
+            retreatPoints = self.neighbors8(unit.position, distance=2) | self.neighbors8(unit.position, distance=4)
+            # filter points that are pathable by a reaper
+            retreatPoints = {x for x in retreatPoints if self.inPathingGrid(x)}
+            if retreatPoints:
+                closestEnemy = enemyThreatsVeryClose.closest_to(unit)
+                retreatPoint = max(retreatPoints, key=lambda x: x.distance_to(closestEnemy) - x.distance_to(unit))
+                # retreatPoint = closestEnemy.position.furthest(retreatPoints)
+                action = unit.move(retreatPoint)
+                return action  # don't execute any of the following
+
+        # move to nearest enemy ground unit/building because no enemy unit is closer than 5
+        allEnemyGroundUnits = self.known_enemy_units.not_flying
+        if allEnemyGroundUnits.exists:
+            closestEnemy = allEnemyGroundUnits.closest_to(unit)
+            action = unit.move(closestEnemy)
+            return action  # don't execute any of the following
+
+        # move to enemy start location if no enemy buildings have been seen
+        # TODO: do something else (return None and do stuff in general micro (just move for example)
+        #action = unit.move(target)  # consider using random.choise
+        return action
+
+    def unit_retreat(self, unit, target):
+            mf = self.state.mineral_field.closest_to(target)
+            if unit.type_id is self.w_type and mf:  # if worker
+                if unit.is_carrying_minerals or unit.is_carrying_vespene:
+                    return unit(AbilityId.SMART, target)
+                mf = self.state.mineral_field.closest_to(target)
+                return unit.gather(mf)
+            else:
+                return unit.move(target)
+
     async def attack_unit_micro(self):
         """"""
         tags = self.attack_force_tags
@@ -736,31 +875,23 @@ class MyBot(sc2.BotAI):
             target = tags[tg]["target"]
             max_hp_sh = unit.health_max + unit.shield_max
 
-            if (ret > 4 or hpc < min_hp) and len(self.townhalls.ready) > 0:
+            #find out a good way for this.. currently returns coroutine and not working --> (remove async?)
+            # action = None
+            # if unit.ground_range > 1:
+            #     action = self.ranged_unit_micro(unit)
+
+            if (ret > 4 or hpc < min_hp) and self.townhalls.ready.amount > 0:
                 tb_removed.append(tg)
-                mf = self.state.mineral_field.closest_to(self.townhalls.ready.random)
-                actions.append(unit.gather(mf))
+                actions.append(self.unit_retreat(unit, self.townhalls.ready.random))
                 continue
 
             if hpc < (max(min(max_hp_sh/2, unit.health_max), min_hp)) and hpc < hpp:
-                if len(self.townhalls.ready) > 0:
-                    mf = self.state.mineral_field.closest_to(self.townhalls.ready.random)
-                    actions.append(unit.gather(mf))
+                if self.townhalls.ready.amount > 0:
+                    actions.append(self.unit_retreat(unit, self.townhalls.ready.random))
                 tags[tg]["retreat"] += 1
 
-
-            # else:
-            #     if unit.distance_to(target) >= 4:
-            #         actions.append(unit.attack(target))
-            #
-            #     else:
-            #         if self.known_enemy_units.exists:
-            #             unit.attack(self.known_enemy_units.closest_to(unit).position)
-            #         else:
-            #             tb_removed.append(tg)
-
             # pursue enemy
-            close_enemies = self.known_enemy_units.not_flying.closer_than(unit.radar_range, unit.position).sorted_by_distance_to(unit)
+            close_enemies = self.known_enemy_units.not_flying.closer_than(16, unit.position).sorted_by_distance_to(unit)
             if unit.distance_to(target) >= 25 and close_enemies.amount < 3:
                 actions.append(unit.move(target))
 
@@ -774,11 +905,6 @@ class MyBot(sc2.BotAI):
 
             if ret and hpc > (max_hp_sh/2):
                 tags[tg]["retreat"] = 0
-
-            # if unit.distance_to(target) < 3:
-            #     actions.append(unit.attack(target))
-            # else:
-            #     tb_removed.append(tg)
 
             tags[tg]["hp_prev"] = hpc = tags[tg]["hp_curr"]
             #worker.health_prev = worker.health
@@ -806,20 +932,17 @@ class MyBot(sc2.BotAI):
 
             max_hp_sh = unit.health_max + unit.shield_max
 
-            #TODO: fix this for non-workers
-            if (ret > 4 or hpc < min_hp) and len(self.townhalls.ready) > 0:
+            # check if low hp or retreating flag (townhall is retreating point) --> retreat
+            if (ret > 4 or hpc < min_hp) and self.townhalls.ready.amount > 0:
                 tb_removed.append(tg)
-                if unit.is_carrying_minerals or unit.is_carrying_vespene:
-                    actions.append(unit.return_resource(self.townhalls.ready.random))
-                else:
-                    mf = self.state.mineral_field.closest_to(self.townhalls.ready.random)
-                    actions.append(unit.gather(mf))
+                actions.append(self.unit_retreat(unit, self.townhalls.ready.random))
                 continue
-            if hpc < (max(min(max_hp_sh/2, unit.health_max), min_hp)) and hpc < hpp:
-                if len(self.townhalls) > 0:
-                    mf = self.state.mineral_field.closest_to(self.townhalls.random)
-                    actions.append(unit.gather(mf))
 
+            # check if less than 50% hp and lost hp since last tick (townhall is retreating point)
+            # --> fall back and come back later
+            if hpc < (max(min(max_hp_sh/2, unit.health_max), min_hp)) and hpc < hpp:
+                if self.townhalls.amount > 0:
+                    actions.append(self.unit_retreat(unit, self.townhalls.random))
                 tags[tg]["retreat"] += 1
                 continue
 
@@ -842,9 +965,11 @@ class MyBot(sc2.BotAI):
                     mf = self.state.mineral_field.closest_to(self.townhalls.ready.random)
                     actions.append(unit.gather(mf))
 
-            if len(self.def_force_tags) >= workers.amount + army.amount:
-                tags[tg]["retreat"] = 0  #dont retreat when everyone is needed in defence
-            elif ret and hpc > (max_hp_sh/2):
+            # test - removing this maybe not needed
+            # if len(self.def_force_tags) >= workers.amount + army.amount:
+            #     tags[tg]["retreat"] = 0  #dont retreat when everyone is needed in defence
+
+            if ret and hpc > (max_hp_sh/2): #hp is back up
                 tags[tg]["retreat"] = 0
 
 
@@ -951,9 +1076,9 @@ class MyBot(sc2.BotAI):
 
     async def manage_tech(self, tech_goal):
         old_step = self.tech_goals[tech_goal]["step"]
-        ready_buildings = uniques_by_attr(self.units.structure.ready)
+        ready_buildings = uniques_by_type_id(self.units.structure.ready)
         ready_types = [b.type_id for b in ready_buildings]
-        not_ready_buildings = uniques_by_attr(self.units.structure.not_ready)
+        not_ready_buildings = uniques_by_type_id(self.units.structure.not_ready)
 
         # check tech progress
         curr_step = self.update_tech_progress(tech_goal, ready_buildings, not_ready_buildings)
@@ -969,6 +1094,7 @@ class MyBot(sc2.BotAI):
             # print(f"getting {curr_step}")
             if curr_step not in racial.MORPH_BUILDINGS:
                 if self.race != Race.Protoss:
+                    # FIXME: might not have any townhalls if the last one got killed
                     await self.build(curr_step, near=self.townhalls.ready.random)
                 else:
                     await self.build(curr_step, near=self.units.of_type(UnitTypeId.PYLON).ready.random)
@@ -1008,7 +1134,10 @@ class MyBot(sc2.BotAI):
             needed = self.tech_goals[tech_goal]["count"] - already_building - already_ready
             if needed > 0:
                 # print(f"""adding {prod_goal}""")
-                for builder in self.workers.prefer_idle.random_group_of(needed):
+                candidates = self.workers.prefer_idle
+                if candidates.amount < 1:
+                    return
+                for builder in candidates.random_group_of(min(needed,candidates.amount)):
                     if self.race != Race.Protoss:
                         await self.build(prod_goal, near=self.units.structure.not_flying.ready.random,
                                          unit=builder)
@@ -1024,9 +1153,9 @@ class MyBot(sc2.BotAI):
         """
 
         if not ready_buildings:
-            ready_buildings = uniques_by_attr(self.units.structure.ready)
+            ready_buildings = uniques_by_type_id(self.units.structure.ready)
         if not  not_ready_buildings:
-            not_ready_buildings = uniques_by_attr(self.units.structure.not_ready)
+            not_ready_buildings = uniques_by_type_id(self.units.structure.not_ready)
         curr_step = self.tech_goals[tech_goal]["step"]
 
         progress = self.check_tech_progress(tech_goal, ready_buildings, not_ready_buildings)
@@ -1081,12 +1210,6 @@ class MyBot(sc2.BotAI):
                     return 1
 
         return 0
-        # if curr_tech in self.units.structure.ready:
-        #     return 2  # tech has progressed
-        # elif curr_tech in self.units.structure.not_ready:
-        #     return 1  # tech in in progress
-        # else:
-        #     return 0  # tech has been lost
 
     def check_morphing_tech(self, tech):
         needed = racial.MORPH_BUILDINGS[tech]
@@ -1217,6 +1340,142 @@ class MyBot(sc2.BotAI):
             await self.chat_send(f"Not defending your attack at {attack_position}")
             self.def_msg_flag = 8
 
+    # MACRO FOR DIFFERENT RACES:
+
+    def macro_boost(self, race):
+        if race == Race.Protoss:
+            return self.protoss_macro()
+        if race == Race.Terran:
+            return self.terran_macro()
+        if race == Race.Zerg:
+            return self.zerg_macro()
+
+    # PROTOSS:
+
+    def protoss_macro(self):
+        actions = []
+        actions.extend(self.spam_chronoboost())
+        return actions
+
+    # chrono boost buildings with queued production
+
+    # adopted from warpgate_push.py
+
+    def chronoboost(self, nexus=None, target=None):
+        if not nexus:
+            nexus = self.townhalls.of_type(UnitTypeId.NEXUS).filter(lambda n: n.energy >= 50).random
+
+        if not target:
+            target = self.units.structure.ready.filter(lambda s: not s.noqueue). \
+                filter(lambda s1: not s1.has_buff(BuffId.CHRONOBOOSTENERGYCOST)).random
+
+        if nexus and target:
+            return nexus(AbilityId.EFFECT_CHRONOBOOSTENERGYCOST, target)
+
+    def spam_chronoboost(self, nexi=None, targets=None):
+        actions = []
+        if not nexi:
+            nexi = self.townhalls.of_type(UnitTypeId.NEXUS).filter(lambda n: n.energy >= 50)
+
+        if not targets:
+            targets = self.units.structure.ready.filter(lambda s: not s.noqueue). \
+                filter(lambda s1: not s1.has_buff(BuffId.CHRONOBOOSTENERGYCOST))
+
+        for nexus in nexi:
+            if targets:
+                target = targets.pop()
+                action = self.chronoboost(nexus, target)
+                if action:
+                    actions.append(action)
+            else:
+                break
+        return actions
+
+    # TERRAN:
+    #make orbitals and drop mules (from mass_reaper.py)
+
+    # morph commandcenter to orbitalcommand
+    def terran_macro(self):
+        actions = []
+        actions.extend(self.morph_orbital())
+        actions.extend(self.drop_mules())
+        return actions
+
+    def morph_orbital(self):
+        actions = []
+        if self.units(UnitTypeId.BARRACKS).ready.exists and self.can_afford(UnitTypeId.ORBITALCOMMAND):  # check if orbital is affordable
+            for cc in self.units(UnitTypeId.COMMANDCENTER).idle:  # .idle filters idle command centers
+                actions.append(cc(AbilityId.UPGRADETOORBITAL_ORBITALCOMMAND))
+
+        return actions
+
+    def drop_mules(self, mf=None):
+        actions = []
+        if not mf:
+            for oc in self.units(UnitTypeId.ORBITALCOMMAND).filter(lambda x: x.energy >= 50):
+                mfs = self.state.mineral_field.closer_than(10, oc)
+                if mfs:
+                    mf = max(mfs, key=lambda x: x.mineral_contents)
+                    actions.append(oc(AbilityId.CALLDOWNMULE_CALLDOWNMULE, mf))
+        else:
+            for oc in self.units(UnitTypeId.ORBITALCOMMAND).filter(lambda x: x.energy >= 50):
+                actions.append(oc(AbilityId.CALLDOWNMULE_CALLDOWNMULE, mf))
+
+        return actions
+
+    # ZERG:
+    # make queens and inject larvae
+
+    def zerg_macro(self):
+        actions = []
+        actions.extend(self.queens_spawn())
+        actions.extend(self.queens_inject())
+        return actions
+
+    #following ones adopted (and modified) from hydralisk_push.py
+
+    def queen_spawn(self, townhall):
+        if self.units(UnitTypeId.SPAWNINGPOOL).ready.exists:
+            close_queens = self.units.of_type(UnitTypeId.QUEEN).closer_than(5, townhall)
+            if close_queens.amount < 1 and townhall.is_ready and townhall.noqueue: #no queens nearby
+                if self.can_afford(UnitTypeId.QUEEN):
+                    return townhall.train(UnitTypeId.QUEEN)
+
+    def queens_spawn(self, townhalls=None):
+        actions = []
+        if not townhalls:
+            townhalls = self.townhalls.ready
+        for th in townhalls:
+            action = self.queen_spawn(th)
+            if action:
+                actions.append(action)
+
+        return actions
+
+    def queen_inject(self, queen, townhall):
+        # abilities = await self.get_available_abilities(queen)
+        if queen.energy >= 25:  # inject cost is 25
+            return queen(AbilityId.EFFECT_INJECTLARVA, townhall)
+
+    def queens_inject(self, queens=None, townhalls=None, stacking=False):
+        actions = []
+        if not queens:
+            queens = self.units.of_type(UnitTypeId.QUEEN)
+        if not townhalls:
+            townhalls = self.townhalls.ready
+        for queen in queens:
+            if queen.energy >= 25:  #lambda x: x.energy >= 50
+                ths = townhalls.ready.closer_than(5, queen)
+                if not stacking: # don't stack larva injects
+                    ths = ths.filter(lambda t: not t.has_buff(BuffId.QUEENSPAWNLARVATIMER))
+                    # inject not needed if spawning larva already
+                if ths.exists:
+                    action = self.queen_inject(queen, ths.closest_to(queen.position))
+                    if action:
+                        actions.append(action)
+        return actions
+
+
 def ability_in_orders_for_any_unit(ability, units):
     for u in units:
         if not u.noqueue:
@@ -1224,13 +1483,15 @@ def ability_in_orders_for_any_unit(ability, units):
                 return True
     return False
 
+
 def check_building_type_similarity(b_type, buildings):
     for b in buildings:
-        found = compare_building_type(b_type,b)
+        found = compare_building_type(b_type, b)
         if found:
             return True
     else:  # not found
         return False
+
 
 def compare_building_type(building_type, building):
     if building_type == building.type_id:
@@ -1243,9 +1504,12 @@ def compare_building_type(building_type, building):
             return True
     return False
 
-def uniques_by_attr(unit_list):
+
+def uniques_by_type_id(unit_list):
 
     # getting unique attribute idea from:
     # https://stackoverflow.com/questions/17347678/list-of-objects-with-a-unique-attribute
     # dict((obj.thing, obj) for obj in object_list).values()
     return dict((obj.type_id, obj) for obj in unit_list).values()
+
+
