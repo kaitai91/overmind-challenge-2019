@@ -13,7 +13,8 @@
 # make/use heatmap for enemy locations to defend (maybe with connected components)
 
 #TODO: macro:
-# make unit types other than workers and townhalls (in progress...)
+# save researched tech somewhere and fetch trainable units from there (for more efficient training esp. with zerg)
+# add more production facilities / tech / whatever when close to 200/200 with big resource bank
 # make defence better by updating defence calculations and reinforcing when needed
 # take air hp into account in enemy att_str_calc
 # ideas:
@@ -44,6 +45,7 @@ from pathlib import Path
 import sc2
 from sc2.constants import *
 from sc2 import Race
+from sc2 import position as position_imported
 
 
 import math
@@ -59,6 +61,8 @@ else:
 CHANGELING = {UnitTypeId.CHANGELING, UnitTypeId.CHANGELINGZEALOT,
               UnitTypeId.CHANGELINGMARINE, UnitTypeId.CHANGELINGMARINESHIELD,
               UnitTypeId.CHANGELINGZERGLING, UnitTypeId.CHANGELINGZERGLINGWINGS}
+
+WORKER_UPPER_LIMIT = 99
 
 # Bots are created as classes and they need to have on_step method defined.
 # Do not change the name of the class!
@@ -87,7 +91,7 @@ class MyBot(sc2.BotAI):
         self.tech_flag = 0
         self.repair_flag = 120
 
-        self.worker_limit = 120
+        self.worker_limit = WORKER_UPPER_LIMIT
         self.tech_switch = 0
 
         self.pend_supply_flag = 0
@@ -261,7 +265,7 @@ class MyBot(sc2.BotAI):
         if self.pend_supply_flag != 1:
             if self.workers.amount < (self.worker_limit - self.townhalls.amount):
                 await self.train_workers()
-            elif self.minerals > 1000 and self.workers.amount < 120:  #hard coded limit for workers
+            elif self.minerals > 1000 and self.workers.amount < WORKER_UPPER_LIMIT:  #hard coded limit for workers
                 await self.train_workers()
 
 
@@ -320,8 +324,10 @@ class MyBot(sc2.BotAI):
                 actions.extend(self.issue_group_attack(army, target))
                 if army.amount > 4:
                     actions.extend(self.issue_group_attack(army, target))
-                if self.workers.amount > 20:
-                    actions.extend(self.issue_worker_attack(target, 0.35))
+
+                excess_workers = self.workers.amount - min(len(self.owned_expansions) * 29 + 1, 89)
+                if excess_workers > 0 and self.workers.amount > 0:
+                    actions.extend(self.issue_worker_attack(target, (excess_workers / self.workers.amount)))
             else: #scout attack location
 
                 army = self.units.not_structure.exclude_type([self.w_type, UnitTypeId.OVERLORD, UnitTypeId.MULE, UnitTypeId.QUEEN])
@@ -350,7 +356,7 @@ class MyBot(sc2.BotAI):
                 self.attack_flag = min(self.attack_flag, 20.2)
 
         #UNIQUE TASKS
-        if iteration == 0:
+        if iteration == 1:
             await self.chat_send(f"(glhf)")
             # target = self.enemy_start_locations[0]
             # actions.extend(self.issue_worker_attack(target))
@@ -645,6 +651,12 @@ class MyBot(sc2.BotAI):
 
         #TODO: better way to assign and track enemy
 
+        if len(self.owned_expansions) > 3:
+            workers = workers.closer_than(10, enemy_position)  # dont assign workers to defend
+            self.w_dist_flag = 10  # wait for 10s to re distribute workers
+            #TODO: just remove this townhall temporarily from worker distribution function
+            # (self.units = self.units.exclude_tag(tag_of_building) in the beginning of step)
+
         if len(army)+len(workers) < 1:
             # print("no army or workers")
             return
@@ -696,7 +708,7 @@ class MyBot(sc2.BotAI):
         elif enemy_dps < 20:
             # more_needed = own_hp < (enemy_hp + 1) or own_dps < (enemy_dps + 1) #try it out
             for asset in army:
-                if own_hp <= (enemy_hp * 1.5 + 1) or own_dps <= (enemy_dps * 1.5 + 1):
+                if own_hp <= (enemy_hp * 1.2 + 1) or own_dps <= (enemy_dps * 1.2 + 1):
                     defenders.append(asset)
                     own_hp += asset.health + asset.shield
                     own_dps += asset.ground_dps
@@ -803,10 +815,10 @@ class MyBot(sc2.BotAI):
         p = position
         d = distance
         return {
-            position.Point2((p.x - d, p.y)),
-            position.Point2((p.x + d, p.y)),
-            position.Point2((p.x, p.y - d)),
-            position.Point2((p.x, p.y + d)),
+            position_imported.Point2((p.x - d, p.y)),
+            position_imported.Point2((p.x + d, p.y)),
+            position_imported.Point2((p.x, p.y - d)),
+            position_imported.Point2((p.x, p.y + d)),
         }
 
     # stolen and modified from position.py
@@ -814,10 +826,10 @@ class MyBot(sc2.BotAI):
         p = position
         d = distance
         return self.neighbors4(position, distance) | {
-            position.Point2((p.x - d, p.y - d)),
-            position.Point2((p.x - d, p.y + d)),
-            position.Point2((p.x + d, p.y - d)),
-            position.Point2((p.x + d, p.y + d)),
+            position_imported.Point2((p.x - d, p.y - d)),
+            position_imported.Point2((p.x - d, p.y + d)),
+            position_imported.Point2((p.x + d, p.y - d)),
+            position_imported.Point2((p.x + d, p.y + d)),
         }
 
     # this checks if a ground unit can walk on a Point2 position
@@ -826,18 +838,22 @@ class MyBot(sc2.BotAI):
         pos = pos.position.to2.rounded
         return self._game_info.pathing_grid[(pos)] != 0
 
-    async def ranged_unit_micro(self, unit):
+    def ranged_unit_micro(self, unit):
         action = None
         #adopted and modified from mass_reaper.py
         # move to range 15 of closest unit if reaper is below 20 hp and not regenerating
-        enemyThreatsClose = self.known_enemy_units.filter(lambda x: x.can_attack_ground).closer_than(15, unit)  # threats that can attack the reaper
+        if unit.is_flying:
+            enemyThreatsClose = self.known_enemy_units.filter(lambda x: x.can_attack_air).closer_than(15, unit)
+        else:
+            enemyThreatsClose = self.known_enemy_units.filter(lambda x: x.can_attack_ground).closer_than(15, unit)  # threats that can attack the reaper
+
         if unit.health_percentage < 2 / 5 and enemyThreatsClose.exists:
             retreatPoints = self.neighbors8(unit.position, distance=2) | self.neighbors8(unit.position, distance=4)
             # filter points that are pathable
             retreatPoints = {x for x in retreatPoints if self.inPathingGrid(x)}
             if retreatPoints:  # maybe this can be done more efficiently (pathing)
                 closestEnemy = enemyThreatsClose.closest_to(unit)
-                retreatPoint = closestEnemy.position.furthest(retreatPoints)
+                retreatPoint = closestEnemy.position.furthest(list(retreatPoints))  # need indexing in position.py
                 action = unit.move(retreatPoint)
                 return action  # dont execute any of the following
 
@@ -869,9 +885,17 @@ class MyBot(sc2.BotAI):
         #         return  # continue for loop, don't execute any of the following
 
 
-        # move towards to max unit range if enemy is closer than 4
-        enemyThreatsVeryClose = self.known_enemy_units.filter(lambda x: x.can_attack_ground).\
-            closer_than(unit.ground_range - 0.5, unit)  # hardcoded attackrange minus 0.5
+        # move towards to max unit range if enemy is closer than ??
+        #TODO: include air attack, not only ground
+        if unit.is_flying:
+            enemyThreatsVeryClose = self.known_enemy_units.filter(lambda x: x.can_attack_air). \
+                closer_than(unit.ground_range - max(0.5, unit.ground_range*0.1), unit)
+        else:
+            enemyThreatsVeryClose = self.known_enemy_units.filter(lambda x: x.can_attack_ground).\
+                closer_than(unit.ground_range - max(0.5, unit.ground_range*0.1), unit)  # threats that can attack the reaper
+
+        # enemyThreatsVeryClose = self.known_enemy_units.filter(lambda x: x.can_attack_ground).\
+        #     closer_than(unit.ground_range - 0.5, unit)  # hardcoded attackrange minus 0.5
         # threats that can attack the reaper
         if unit.weapon_cooldown != 0 and enemyThreatsVeryClose.exists:
             retreatPoints = self.neighbors8(unit.position, distance=2) | self.neighbors8(unit.position, distance=4)
@@ -906,6 +930,42 @@ class MyBot(sc2.BotAI):
             else:
                 return unit.move(target)
 
+    def general_micro(self, unit_tag, tags, hp_lower_bound=0.1):
+        action = None
+        unit = self.units.by_tag(unit_tag)
+        tags[unit_tag]["hp_curr"] = unit.health + unit.shield  # update current hp
+        ret = tags[unit_tag]["retreat"]
+        hpc = tags[unit_tag]["hp_curr"]
+        hpp = tags[unit_tag]["hp_prev"]
+        max_hp_sh = unit.health_max + unit.shield_max
+
+        # check if low hp or retreating flag (townhall is retreating point) --> retreat
+        no_shield = not unit.shield > unit.health
+        if (ret > 4 or (hpc < hp_lower_bound and no_shield)) and self.townhalls.ready.amount > 0:
+            action = self.unit_retreat(unit, self.townhalls.ready.random)
+            return action, True  # tb_removed.append(unit_tag)
+
+        # check if less than 50% hp and lost hp since last tick (townhall is retreating point)
+        # --> fall back and come back later
+        # if unit has shield use shield as indicator
+        hp_less_than_half_more_than_lower_limit = hpc < (max(min(max_hp_sh / 2, unit.health_max), hp_lower_bound))
+
+        if (not no_shield or hp_less_than_half_more_than_lower_limit) and hpc < hpp:
+            # if hpc < (max(min(max_hp_sh/2, unit.health_max), min_hp)) and hpc < hpp:
+            if self.townhalls.amount > 0:
+                actions= self.unit_retreat(unit, self.townhalls.random)
+            tags[unit_tag]["retreat"] += 1
+            return action, False
+
+        # find out a good way for this..
+        # action = None
+        if unit.ground_range > 1:
+            action = self.ranged_unit_micro(unit)
+            if action:
+                return action, False
+
+        return action, False
+
     async def attack_unit_micro(self):
         """"""
         tags = self.attack_force_tags
@@ -916,27 +976,14 @@ class MyBot(sc2.BotAI):
             min_hp = 11
         for tg in tags:
             unit = self.units.by_tag(tg)
-            tags[tg]["hp_curr"] = unit.health + unit.shield #update current hp
-            ret = tags[tg]["retreat"]
-            hpc = tags[tg]["hp_curr"]
-            hpp = tags[tg]["hp_prev"]
-            target = tags[tg]["target"]
-            max_hp_sh = unit.health_max + unit.shield_max
 
-            #find out a good way for this.. currently returns coroutine and not working --> (remove async?)
-            # action = None
-            # if unit.ground_range > 1:
-            #     action = self.ranged_unit_micro(unit)
-
-            if (ret > 4 or hpc < min_hp) and self.townhalls.ready.amount > 0:
+            # general_micro
+            action, remove = self.general_micro(tg, tags, min_hp)
+            if remove:
                 tb_removed.append(tg)
-                actions.append(self.unit_retreat(unit, self.townhalls.ready.random))
+            if action:
+                actions.append(action)
                 continue
-
-            if hpc < (max(min(max_hp_sh/2, unit.health_max), min_hp)) and hpc < hpp:
-                if self.townhalls.ready.amount > 0:
-                    actions.append(self.unit_retreat(unit, self.townhalls.ready.random))
-                tags[tg]["retreat"] += 1
 
             # pursue enemy
             close_a_enemies = self.known_enemy_units.flying.closer_than(16, unit.position)
@@ -947,17 +994,20 @@ class MyBot(sc2.BotAI):
             if unit.can_attack_ground:
                 close_enemies += close_g_enemies.amount
 
+            #get closer to target (location based attack move)
+            target = tags[tg]["target"]
             if unit.distance_to(target) >= 25 and close_enemies < 2:
                 actions.append(unit.move(target))
-
             elif (unit.distance_to(target) >= 2 and tags[tg]["retreat"] < 5): #or len(close_enemies) > 0:
                 actions.append(unit.attack(target))
             else:
                 tb_removed.append(tg)
                 if self.townhalls.ready.amount > 0:
-                    mf = self.state.mineral_field.closest_to(self.townhalls.ready.random)
-                    actions.append(unit.gather(mf))
+                    actions.append(self.unit_retreat(unit, self.townhalls.ready.random))
 
+            ret = tags[tg]["retreat"]
+            hpc = tags[tg]["hp_curr"]
+            max_hp_sh = unit.health_max + unit.shield_max
             if ret and hpc > (max_hp_sh/2):
                 tags[tg]["retreat"] = 0
 
@@ -974,38 +1024,25 @@ class MyBot(sc2.BotAI):
         tags = self.def_force_tags
         actions = []
         tb_removed = []
-        min_hp = 0.1 #TODO: change if needed / create new var for situational min_hp
+        min_hp = 0.1  # TODO: change if needed / create new var for situational min_hp
         for tg in tags:
             unit = self.units.by_tag(tg)
-            tags[tg]["hp_curr"] = unit.health + unit.shield #update current hp
-            ret = tags[tg]["retreat"]
-            hpc = tags[tg]["hp_curr"]
-            hpp = tags[tg]["hp_prev"]
-            target = tags[tg]["target"]
-            orig = tags[tg]["orig_target"]
 
-
-            max_hp_sh = unit.health_max + unit.shield_max
-
-            # check if low hp or retreating flag (townhall is retreating point) --> retreat
-            if (ret > 4 or hpc < min_hp) and self.townhalls.ready.amount > 0:
+            #general_micro
+            action, remove = self.general_micro(tg, tags, min_hp)
+            if remove:
                 tb_removed.append(tg)
-                actions.append(self.unit_retreat(unit, self.townhalls.ready.random))
-                continue
-
-            # check if less than 50% hp and lost hp since last tick (townhall is retreating point)
-            # --> fall back and come back later
-            if hpc < (max(min(max_hp_sh/2, unit.health_max), min_hp)) and hpc < hpp:
-                if self.townhalls.amount > 0:
-                    actions.append(self.unit_retreat(unit, self.townhalls.random))
-                tags[tg]["retreat"] += 1
+            if action:
+                actions.append(action)
                 continue
 
             army = self.units.not_structure.exclude_type(self.w_type).filter(lambda u: u.can_attack_ground)
             workers = self.workers.filter(lambda w: not w.is_constructing_scv)
 
             #pursue enemy
+            orig = tags[tg]["orig_target"]  # for defending at defence location
             close_enemies = self.known_enemy_units.not_flying.closer_than(unit.sight_range, unit.position).exclude_type(CHANGELING).sorted_by_distance_to(unit)
+            target = tags[tg]["target"]
             if close_enemies.amount > 0:
                 #pursue only so far:
                 if close_enemies[0].distance_to(orig) > 20:
@@ -1024,6 +1061,9 @@ class MyBot(sc2.BotAI):
             # if len(self.def_force_tags) >= workers.amount + army.amount:
             #     tags[tg]["retreat"] = 0  #dont retreat when everyone is needed in defence
 
+            ret = tags[tg]["retreat"]
+            hpc = tags[tg]["hp_curr"]
+            max_hp_sh = unit.health_max + unit.shield_max
             if ret and hpc > (max_hp_sh/2): #hp is back up
                 tags[tg]["retreat"] = 0
 
@@ -1190,9 +1230,9 @@ class MyBot(sc2.BotAI):
                 candidates = self.workers.prefer_idle
                 if candidates.amount < 1:
                     return
-                for builder in candidates.random_group_of(min(needed,candidates.amount)):
+                for builder in candidates.random_group_of(min(needed, candidates.amount)):
                     if self.race != Race.Protoss:
-                        await self.build(prod_goal, near=self.units.structure.not_flying.ready.random,
+                        await self.build(prod_goal, near=self.units.structure.not_flying.ready.random.position.towards(self.game_info.map_center, 5),
                                          unit=builder)
                     else:
                         await self.build(prod_goal, near=self.units.of_type(UnitTypeId.PYLON).ready.random, unit=builder)
@@ -1298,8 +1338,7 @@ class MyBot(sc2.BotAI):
             return 0
 
 
-
-    async def get_tech(self,tech_goal):
+    async def get_tech(self, tech_goal):
         """
         Tries to progress towards specified tech
 
@@ -1554,9 +1593,9 @@ class MyBot(sc2.BotAI):
         # lings
         self.set_tech_goal(UnitTypeId.SPAWNINGPOOL, self.th_type, None, 2, UnitTypeId.ZERGLING)
 
-        # roaches
-        self.set_tech_goal(UnitTypeId.ROACHWARREN, self.th_type, None, 1,
-                           UnitTypeId.ROACH)
+        # hydras
+        self.set_tech_goal(UnitTypeId.HYDRALISKDEN, self.th_type, None, 1,
+                           UnitTypeId.HYDRALISK)
 
         # lurkers #TODO: make morphing into different units possible
         # self.set_tech_goal(UnitTypeId.LURKERDENMP, self.th_type, None, 1, UnitTypeId.LURKER)
