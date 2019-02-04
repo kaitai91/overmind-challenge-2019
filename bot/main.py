@@ -244,7 +244,7 @@ class MyBot(sc2.BotAI):
 
         if self.tech_switch:
             # set desired amount of workers based on # of expansion (in between 24, 88)
-            self.worker_limit = max(24, min(len(self.owned_expansions) * 24, 88))
+            self.adjust_worker_limit()
             if not self.tech_flag:
                     await self.check_and_build_gas()
                     # check that bot has pylons (IF PROTOSS) before building stuff (move to other part later(?))
@@ -265,8 +265,8 @@ class MyBot(sc2.BotAI):
         if self.pend_supply_flag != 1:
             if self.workers.amount < (self.worker_limit - self.townhalls.amount):
                 await self.train_workers()
-            elif self.minerals > 1000 and self.workers.amount < WORKER_UPPER_LIMIT:  #hard coded limit for workers
-                await self.train_workers()
+            # elif self.minerals > 1000 and self.workers.amount < WORKER_UPPER_LIMIT:  #hard coded limit for workers
+            #     await self.train_workers()
 
 
         #FOR MICRO
@@ -358,8 +358,10 @@ class MyBot(sc2.BotAI):
         #UNIQUE TASKS
         if iteration == 1:
             await self.chat_send(f"(glhf)")
-            # target = self.enemy_start_locations[0]
-            # actions.extend(self.issue_worker_attack(target))
+
+            # scout
+            target = self.enemy_start_locations[0]
+            actions.extend(self.issue_group_attack(self.workers.ready.random_group_of(2), target))
 
         #if iteration == 1:
         #    await self.train_workers()
@@ -375,7 +377,6 @@ class MyBot(sc2.BotAI):
         if iteration == 7:
             #await self.chat_send(f"time:{self.getTimeInSeconds()}")
             await self.chat_send(f"You are {self.enemy_race}")
-
 
         await self.do_actions(actions)
 
@@ -435,6 +436,16 @@ class MyBot(sc2.BotAI):
 
         return closest
 
+    def adjust_worker_limit(self):
+        self.worker_limit = max(24, min(len(self.owned_expansions) * 24, 88))
+        if 3000 <= self.minerals:
+            self.worker_limit = 44
+        elif self.worker_limit == 44 and self.minerals <= 1000:
+            self.worker_limit = 89
+        elif self.tech_switch:
+            self.worker_limit = max(24, min(len(self.owned_expansions) * 24, 88))
+
+
     async def train_workers(self):
         actions = []
         for th in self.townhalls.ready.noqueue:
@@ -446,7 +457,7 @@ class MyBot(sc2.BotAI):
                     actions.append(th.train(self.w_type))
         await self.do_actions(actions)
 
-    async def train_units(self, building_type, unit_type, max_amount=None):
+    def train_units(self, building_type, unit_type, max_amount=None):
         actions = []
         if max_amount:
             buildings = self.units(building_type).ready.noqueue.random_group_of(max_amount)
@@ -459,7 +470,7 @@ class MyBot(sc2.BotAI):
                         actions.append(self.units(self.s_args[0]).random.train(unit_type))
                 else:
                     actions.append(prod_b.train(unit_type))
-        await self.do_actions(actions)
+        return actions
 
     async def build_supply(self):
         if self.supply_cap == 200:
@@ -519,23 +530,23 @@ class MyBot(sc2.BotAI):
         if self.workers.amount <= 7 or max_amount == 0:
             return []
         for th in own_bases:
-#            for th in self.townhalls.random_group_of(max_amount):
-            vgs = self.state.vespene_geyser.closer_than(10, th)
-            for vg in vgs:
-                if await self.can_place(self.gas_type, vg.position) and self.can_afford(self.gas_type):
-                    ws = self.workers.gathering
-                    if ws.exists:  # same condition as above
-                        w = ws.closest_to(vg)
-                        # caution: the target for the refinery has to be the vespene geyser, not its position!
-                        # actions.append(self.units(self.s_args[0]).random.train(unit_type))
-                        # await self.build(self.gas_type, vg)
-                        actions.append(w.build(self.gas_type, vg))
-                        added +=1
-                        #w.build
-                if added >=max_amount:
+            if th.is_ready:
+                vgs = self.state.vespene_geyser.closer_than(10, th)
+                for vg in vgs:
+                    if await self.can_place(self.gas_type, vg.position) and self.can_afford(self.gas_type):
+                        ws = self.workers.gathering
+                        if ws.exists:  # same condition as above
+                            w = ws.closest_to(vg)
+                            # caution: the target for the refinery has to be the vespene geyser, not its position!
+                            # actions.append(self.units(self.s_args[0]).random.train(unit_type))
+                            # await self.build(self.gas_type, vg)
+                            actions.append(w.build(self.gas_type, vg))
+                            added +=1
+                            #w.build
+                    if added >=max_amount:
+                        break
+                if added >= max_amount:
                     break
-            if added >= max_amount:
-                break
 
         await self.do_actions(actions)
         #print(actions)
@@ -558,9 +569,12 @@ class MyBot(sc2.BotAI):
         enemy_position = None
         closest_dist = math.inf
         self.attacking_enemy_units = []
+        bases = self.units.structure.ready
+        if not bases:
+            bases = self.units.structure
         for enemy in known_g_enemies:
             if enemy.can_attack_ground:
-                dist = self.units.structure.ready.closest_distance_to(enemy)
+                dist = bases.closest_distance_to(enemy)
                 if dist < max(12, enemy.ground_range):  # max(16, enemy.radar_range, (enemy.ground_range) + 5):
                     if dist < closest_dist:
                         enemy_position = enemy.position
@@ -1142,33 +1156,8 @@ class MyBot(sc2.BotAI):
                                          "orig_target": orig}
         return action
 
-    async def prepare_kill_move(self, goal_building, goal_unit):
-        """
-
-        """
-        await self.check_and_build_gas()
-
-        progress = await self.get_tech(goal_building)
-        if not progress:
-            # print(f"tech progress ?")
-            self.tech_flag = 3  # try again soon
-        elif progress == 1:
-            # print(f"tech progress 1")
-            self.tech_flag = 15 #try again after building finish (every building should take more than 30s)
-        elif progress == 2:  # tech available
-            # print(f"tech available")
-            # print(goal_building)
-            # print(goal_unit)
-            if goal_building in racial.PROD_B_TYPES[self.race]:  #this check shouldn't be needed
-                await self.train_units(goal_building, goal_unit)
-            else:  # zerg
-                await self.train_units(self.th_type, goal_unit)
-            self.tech_flag = 5
-        else:
-            pass
-            # print(f"something weird happened")
-
     async def manage_tech(self, tech_goal):
+        actions = []
         old_step = self.tech_goals[tech_goal]["step"]
         ready_buildings = uniques_by_type_id(self.units.structure.ready)
         ready_types = [b.type_id for b in ready_buildings]
@@ -1183,11 +1172,13 @@ class MyBot(sc2.BotAI):
         else:
             pending = self.already_pending(curr_step)
 
-        if not pending and (curr_step not in ready_types):  # or old_step != curr_step:
+        if not pending and (curr_step not in ready_types) and self.workers.amount > 0:  # or old_step != curr_step:
             # print(f"getting {curr_step}")
-            if curr_step not in racial.MORPH_BUILDINGS:
+            # FIXME: might not have any townhalls if the last one got killed (build townhall then) (DONE?)
+            if curr_step is self.th_type:  # in case townhall was lost
+                await self.expand()
+            elif curr_step not in racial.MORPH_BUILDINGS:
                 if self.race != Race.Protoss:
-                    # FIXME: might not have any townhalls if the last one got killed
                     await self.build(curr_step, near=self.townhalls.ready.random.position.towards(self.game_info.map_center, 5))
                 else:
                     await self.build(curr_step, near=self.units.of_type(UnitTypeId.PYLON).ready.random)
@@ -1217,9 +1208,9 @@ class MyBot(sc2.BotAI):
                 #     await self.train_units(building, goal_unit)
 
                 if prod_goal in racial.PROD_B_TYPES[self.race]:  # non-zerg
-                    await self.train_units(prod_goal, goal_unit)
+                    actions.extend(self.train_units(prod_goal, goal_unit))
                 else:  # zerg
-                    await self.train_units(self.th_type, goal_unit)
+                    actions.extend(self.train_units(self.th_type, goal_unit))
 
             # add enough production buildings
             already_building = self.already_pending(prod_goal)
@@ -1236,7 +1227,8 @@ class MyBot(sc2.BotAI):
                                          unit=builder)
                     else:
                         await self.build(prod_goal, near=self.units.of_type(UnitTypeId.PYLON).ready.random, unit=builder)
-
+        if len(actions) >0:
+            await self.do_actions(actions)
 
     def update_tech_progress(self, tech_goal, ready_buildings=None, not_ready_buildings=None):
         """
@@ -1591,7 +1583,12 @@ class MyBot(sc2.BotAI):
 
     def zerg_tech(self):
         # lings
-        self.set_tech_goal(UnitTypeId.SPAWNINGPOOL, self.th_type, None, 2, UnitTypeId.ZERGLING)
+        self.set_tech_goal(UnitTypeId.SPAWNINGPOOL, self.th_type, None, 2,
+                           UnitTypeId.ZERGLING)
+
+        # roaches
+        self.set_tech_goal(UnitTypeId.ROACHWARREN, self.th_type, None, 1,
+                           UnitTypeId.ROACH)
 
         # hydras
         self.set_tech_goal(UnitTypeId.HYDRALISKDEN, self.th_type, None, 1,
@@ -1604,6 +1601,15 @@ class MyBot(sc2.BotAI):
         actions = []
         actions.extend(self.queens_spawn())
         actions.extend(self.queens_inject())
+        if self.get_time_in_seconds() % 6 and self.minerals > 300 and self.vespene > 150 \
+                and self.units.of_type(UnitTypeId.OVERSEER).amount + \
+                self.already_pending(UnitTypeId.OVERSEER, all_units=True) < 2:
+            a = self.morph_overseer()
+            if a:
+                actions.append(a)
+        if self.tech_switch and self.minerals > 900:
+            actions.extend(self.train_zerg_units())
+
         return actions
 
     #following ones adopted (and modified) from hydralisk_push.py
@@ -1649,6 +1655,24 @@ class MyBot(sc2.BotAI):
                         actions.append(action)
         return actions
 
+    def train_zerg_units(self):
+        actions = []
+        for goal in self.tech_goals:
+            if self.units.structure.ready.of_type(goal).amount > 0:
+                action = self.train_units(self.th_type, self.tech_goals[goal]["unit"])
+                if action:
+                    actions.extend(action)
+        print(actions)
+        return actions
+
+    def morph_overseer(self, overlord=None):
+        if overlord:
+            return overlord(AbilityId.MORPH_OVERSEER)
+        if self.townhalls.of_type({UnitTypeId.LAIR, UnitTypeId.HIVE}).amount > 0:
+            ovls = self.units.of_type(UnitTypeId.OVERLORD)
+            if ovls.amount > 0:
+                print(f"trying to create overseer")
+                return ovls.random(AbilityId.MORPH_OVERSEER)
 
 def ability_in_orders_for_any_unit(ability, units):
     for u in units:
