@@ -1662,7 +1662,7 @@ class MyBot(sc2.BotAI):
                 action = self.train_units(self.th_type, self.tech_goals[goal]["unit"])
                 if action:
                     actions.extend(action)
-        print(actions)
+        # print(actions)
         return actions
 
     def morph_overseer(self, overlord=None):
@@ -1671,7 +1671,7 @@ class MyBot(sc2.BotAI):
         if self.townhalls.of_type({UnitTypeId.LAIR, UnitTypeId.HIVE}).amount > 0:
             ovls = self.units.of_type(UnitTypeId.OVERLORD)
             if ovls.amount > 0:
-                print(f"trying to create overseer")
+                # print(f"trying to create overseer")
                 return ovls.random(AbilityId.MORPH_OVERSEER)
 
 def ability_in_orders_for_any_unit(ability, units):
