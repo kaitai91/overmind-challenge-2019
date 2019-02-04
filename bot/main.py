@@ -280,10 +280,10 @@ class MyBot(sc2.BotAI):
 
             await self.attack_unit_micro()
 
-        if len(self.def_force_tags) > 0 and (min(1.0, clock_diff) <= (self.clock - int(self.clock))):
+        if len(self.def_force_tags) > 0 and (min(0.1, clock_diff) <= (self.clock - int(self.clock))):
             await self.defend_unit_micro()
 
-        if int(self.clock) % 51 == 50 and clock_diff >= self.clock-int(self.clock):
+        if int(self.clock) % 61 == 57 and clock_diff >= self.clock-int(self.clock):
             await self.chat_send(f"Elapsed game time: {int(self.clock/60)} min, {int(self.clock)%60}s")
 
         #killed_base here, since not used anywhere else.. move if needed
@@ -293,7 +293,7 @@ class MyBot(sc2.BotAI):
                 # print("killed enemy starting base")
                 self.killed_start_base = 1
 
-        if self.supply_used > 110 and not self.attack_flag and \
+        if self.supply_used - self.workers.amount > 6 and not self.attack_flag and \
                 ((len(self.attack_force_tags)+len(self.def_force_tags)) <
                  (self.units.not_structure.not_flying.amount/2 + 1)):
 
@@ -665,7 +665,7 @@ class MyBot(sc2.BotAI):
 
         #TODO: better way to assign and track enemy
 
-        if len(self.owned_expansions) > 3:
+        if len(self.owned_expansions) >= 3:
             workers = workers.closer_than(10, enemy_position)  # dont assign workers to defend
             self.w_dist_flag = 10  # wait for 10s to re distribute workers
             #TODO: just remove this townhall temporarily from worker distribution function
@@ -677,7 +677,7 @@ class MyBot(sc2.BotAI):
 
         actions = []
 
-        defenders, own_dps, own_hp = await self.create_defence_group(army, enemy_dps, enemy_hp, workers)
+        defenders, own_dps, own_hp = self.create_defence_group(army, enemy_dps, enemy_hp, workers)
 
         #do we have enough to defend
         if enemy_dps < 10:
@@ -697,7 +697,7 @@ class MyBot(sc2.BotAI):
         if len(actions) > 0:
             await self.do_actions(actions)
 
-    async def create_defence_group(self, army, enemy_dps, enemy_hp, workers):
+    def create_defence_group(self, army, enemy_dps, enemy_hp, workers):
         own_hp = 0
         own_dps = 0
         defenders = []
@@ -758,70 +758,6 @@ class MyBot(sc2.BotAI):
 
     #TODO: implement the micro function
 
-    # async def micro_viking(self, viking, tags):
-    #     """"""
-    #     tag = viking.tag
-    #     actions = []
-    #     tb_removed = False
-    #     min_hp = 22
-    #     tags["hp_curr"] = viking.health + viking.shield #update current hp
-    #     ret = tags["retreat"]
-    #     hpc = tags["hp_curr"]
-    #     hpp = tags["hp_prev"]
-    #     target = tags["target"]
-    #     max_hp_sh = viking.health_max + viking.shield_max
-    #
-    #     if (ret > 4 or hpc < min_hp) and len(self.townhalls.ready) > 0:
-    #         tb_removed.append(tag)
-    #         retreat_point = self.state.mineral_field.closest_to(self.townhalls.ready.random)
-    #         actions.append(viking.move(retreat_point))
-    #         return
-    #
-    #     if hpc < (max(min(max_hp_sh/2, viking.health_max), min_hp)) and hpc < hpp:
-    #         if len(self.townhalls.ready) > 0:
-    #             mf = self.state.mineral_field.closest_to(self.townhalls.ready.random)
-    #             actions.append(viking.gather(mf))
-    #         tags["retreat"] += 1
-    #
-    #
-    #     # else:
-    #     #     if unit.distance_to(target) >= 4:
-    #     #         actions.append(unit.attack(target))
-    #     #
-    #     #     else:
-    #     #         if self.known_enemy_units.exists:
-    #     #             unit.attack(self.known_enemy_units.closest_to(unit).position)
-    #     #         else:
-    #     #             tb_removed.append(tg)
-    #
-    #     # pursue enemy
-    #     close_enemies = self.known_enemy_units.not_flying.closer_than(viking.radar_range, viking.position).sorted_by_distance_to(unit)
-    #     if viking.distance_to(target) >= 25 and close_enemies.amount < 3:
-    #         actions.append(viking.move(target))
-    #
-    #     elif (viking.distance_to(target) >= 2 and tags[tg]["retreat"] < 5): #or len(close_enemies) > 0:
-    #         actions.append(viking.attack(target))
-    #     else:
-    #         tb_removed.append(tag)
-    #         if self.townhalls.ready.amount > 0:
-    #             mf = self.state.mineral_field.closest_to(self.townhalls.ready.random)
-    #             actions.append(unit.gather(mf))
-    #
-    #     if ret and hpc > (max_hp_sh/2):
-    #         tags[tg]["retreat"] = 0
-    #
-    #     # if unit.distance_to(target) < 3:
-    #     #     actions.append(unit.attack(target))
-    #     # else:
-    #     #     tb_removed.append(tg)
-    #
-    #     tags[tg]["hp_prev"] = hpc = tags[tg]["hp_curr"]
-    #     #worker.health_prev = worker.health
-    #
-    #     for tag in tb_removed:
-    #         del(self.attack_force_tags[tag])
-    #
-    #     await self.do_actions(actions)
 
     # from mass_reaper.py
     # stolen and modified from position.py
@@ -857,9 +793,16 @@ class MyBot(sc2.BotAI):
         #adopted and modified from mass_reaper.py
         # move to range 15 of closest unit if reaper is below 20 hp and not regenerating
         if unit.is_flying:
-            enemyThreatsClose = self.known_enemy_units.filter(lambda x: x.can_attack_air).closer_than(15, unit)
+            enemyAirThreatsClose = self.known_enemy_units.flying.filter(lambda x: x.can_attack_air).\
+                closer_than(15, unit)
+            enemyGroundThreatsClose = self.known_enemy_units.not_flying.filter(lambda x: x.can_attack_air).\
+                closer_than(15, unit)
         else:
-            enemyThreatsClose = self.known_enemy_units.filter(lambda x: x.can_attack_ground).closer_than(15, unit)  # threats that can attack the reaper
+            enemyAirThreatsClose = self.known_enemy_units.flying.filter(lambda x: x.can_attack_ground). \
+                closer_than(15, unit)
+            enemyGroundThreatsClose = self.known_enemy_units.not_flying.filter(lambda x: x.can_attack_ground). \
+                closer_than(15, unit)
+        enemyThreatsClose = enemyAirThreatsClose or enemyGroundThreatsClose  # use or to combine selections
 
         if unit.health_percentage < 2 / 5 and enemyThreatsClose.exists:
             retreatPoints = self.neighbors8(unit.position, distance=2) | self.neighbors8(unit.position, distance=4)
@@ -872,12 +815,21 @@ class MyBot(sc2.BotAI):
                 return action  # dont execute any of the following
 
         # reaper is ready to attack, shoot nearest ground unit
-        enemyGroundUnits = self.known_enemy_units.not_flying.closer_than(unit.ground_range, unit)
-        if unit.weapon_cooldown == 0 and enemyGroundUnits.exists:
-            enemyGroundUnits = enemyGroundUnits.sorted(lambda x: x.distance_to(unit))
-            closestEnemy = enemyGroundUnits[0]
-            action = unit.attack(closestEnemy)
-            return action  # dont execute any of the following
+        if unit.can_attack_ground:
+            enemyGroundUnits = self.known_enemy_units.not_flying.closer_than(unit.ground_range, unit)
+            if unit.weapon_cooldown == 0 and enemyGroundUnits.exists:
+                enemyGroundUnits = enemyGroundUnits.sorted(lambda x: x.distance_to(unit))
+                closestEnemy = enemyGroundUnits[0]
+                action = unit.attack(closestEnemy)
+                return action  # dont execute any of the following
+
+        if unit.can_attack_air:
+            enemyAirUnits = self.known_enemy_units.flying.closer_than(unit.air_range, unit)
+            if unit.weapon_cooldown == 0 and enemyAirUnits.exists:
+                enemyAirUnits = enemyAirUnits.sorted(lambda x: x.distance_to(unit))
+                closestEnemy = enemyAirUnits[0]
+                action = unit.attack(closestEnemy)
+                return action  # dont execute any of the following
 
         # attack is on cooldown, check if grenade is on cooldown, if not then throw it to furthest enemy in range 5
         # use this for different units' special attacks and abilities
@@ -901,12 +853,26 @@ class MyBot(sc2.BotAI):
 
         # move towards to max unit range if enemy is closer than ??
         #TODO: include air attack, not only ground
+        # maybe air targets arent needed here (mutas?)
         if unit.is_flying:
-            enemyThreatsVeryClose = self.known_enemy_units.filter(lambda x: x.can_attack_air). \
-                closer_than(unit.ground_range - max(0.5, unit.ground_range*0.1), unit)
+            enemyAirThreatsVeryClose = enemyAirThreatsClose.\
+                filter(lambda eu: eu.air_range < unit.air_range).\
+                closer_than(min(0, unit.air_range - max(0.5, unit.air_range * 0.1)), unit)
+            enemyGroundThreatsVeryClose = enemyGroundThreatsClose.\
+                filter(lambda eu: eu.air_range < unit.ground_range).\
+                closer_than(min(0, unit.air_range - max(0.5, unit.ground_range * 0.1)), unit)
+            # enemyThreatsVeryClose = self.known_enemy_units.filter(lambda x: x.can_attack_air). \
+            #     closer_than(unit.ground_range - max(0.5, unit.ground_range*0.1), unit)
         else:
-            enemyThreatsVeryClose = self.known_enemy_units.filter(lambda x: x.can_attack_ground).\
-                closer_than(unit.ground_range - max(0.5, unit.ground_range*0.1), unit)  # threats that can attack the reaper
+            enemyAirThreatsVeryClose = enemyAirThreatsClose. \
+                filter(lambda eu: eu.ground_range < unit.air_range). \
+                closer_than(min(0, unit.ground_range - max(0.5, unit.air_range * 0.1)), unit)
+            enemyGroundThreatsVeryClose = enemyGroundThreatsClose. \
+                filter(lambda eu: eu.ground_range < unit.ground_range). \
+                closer_than(min(0, unit.ground_range - max(0.5, unit.ground_range * 0.1)), unit)
+            # enemyThreatsVeryClose = enemyThreatsClose.filter(lambda eu: eu.ground_range < unit.ground_range). \
+            #     closer_than(min(0, unit.ground_range - max(0.5, unit.ground_range * 0.1)), unit)
+        enemyThreatsVeryClose = enemyAirThreatsVeryClose or enemyGroundThreatsVeryClose  # combine selections
 
         # enemyThreatsVeryClose = self.known_enemy_units.filter(lambda x: x.can_attack_ground).\
         #     closer_than(unit.ground_range - 0.5, unit)  # hardcoded attackrange minus 0.5
@@ -1117,7 +1083,9 @@ class MyBot(sc2.BotAI):
         return self.state.game_loop * 0.725 * (1 / 16)
 
     def issue_worker_attack(self, target, percentage=1.0):
-        return self.issue_group_attack(self.workers.random_group_of(int(self.workers.amount*percentage)+1), target)
+        return self.issue_group_attack(self.workers.random_group_of(
+            min(self.workers.amount, int(self.workers.amount*percentage)+1)),
+            target)
 
     def issue_idle_worker_attack(self, target):
         return self.issue_group_attack(self.workers.idle, target)
@@ -1662,7 +1630,7 @@ class MyBot(sc2.BotAI):
                 action = self.train_units(self.th_type, self.tech_goals[goal]["unit"])
                 if action:
                     actions.extend(action)
-        print(actions)
+        # print(actions)
         return actions
 
     def morph_overseer(self, overlord=None):
@@ -1671,7 +1639,7 @@ class MyBot(sc2.BotAI):
         if self.townhalls.of_type({UnitTypeId.LAIR, UnitTypeId.HIVE}).amount > 0:
             ovls = self.units.of_type(UnitTypeId.OVERLORD)
             if ovls.amount > 0:
-                print(f"trying to create overseer")
+                # print(f"trying to create overseer")
                 return ovls.random(AbilityId.MORPH_OVERSEER)
 
 def ability_in_orders_for_any_unit(ability, units):
