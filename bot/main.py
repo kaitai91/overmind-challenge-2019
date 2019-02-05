@@ -92,6 +92,7 @@ class MyBot(sc2.BotAI):
         self.killed_start_base = 0
         self.tech_flag = 0
         self.repair_flag = 120
+        self.check_building_flag = 0
 
         self.worker_limit = WORKER_UPPER_LIMIT
         self.tech_switch = 0
@@ -168,6 +169,7 @@ class MyBot(sc2.BotAI):
         self.tech_flag = max(0, self.tech_flag - clock_diff)
         self.racial_macro_flag = max(0, self.racial_macro_flag - clock_diff)
         self.repair_flag = max(0, self.repair_flag-clock_diff)
+        self.check_building_flag = max(0, self.check_building_flag-clock_diff)
 
         # if self.d_task:  # wait task to finish to avoid timeouts (does this actually work?)
         #     return
@@ -286,7 +288,7 @@ class MyBot(sc2.BotAI):
         if len(self.def_force_tags) > 0 and (min(0.1, clock_diff) <= (self.clock - int(self.clock))):
             await self.defend_unit_micro()
 
-        if int(self.clock) % 61 == 57 and clock_diff >= self.clock-int(self.clock):
+        if int(self.clock) % 91 == 57 and clock_diff >= self.clock-int(self.clock)and self.clock > 222:
             await self.chat_send(f"Elapsed game time: {int(self.clock/60)} min, {int(self.clock)%60}s")
 
         #killed_base here, since not used anywhere else.. move if needed
@@ -351,10 +353,10 @@ class MyBot(sc2.BotAI):
             self.tech_switch = 1
             self.set_racial_tech_goals(self.race)
 
-            await self.chat_send(f"Initializing tech advancement procedures")
+            await self.chat_send(f"(party) It's party time! (party)")
 
         if self.supply_used > 170: #attack when no units attacking and close to max supply
-            if len(self.attack_force_tags) < 70:
+            if len(self.attack_force_tags) < 15:
                 self.attack_flag = min(self.attack_flag, 37)  #attack soon
             else:
                 self.attack_flag = min(self.attack_flag, 20.2)
@@ -362,10 +364,14 @@ class MyBot(sc2.BotAI):
         #UNIQUE TASKS
         if iteration == 1:
             await self.chat_send(f"(glhf)")
+            await self.chat_send(f"Let's roll dice (random)X(random)X(random)")
 
             # scout
             target = self.enemy_start_locations[0]
-            actions.extend(self.issue_group_attack(self.workers.ready.random_group_of(2), target))
+            if self.enemy_race is Race.Terran:
+                actions.extend(self.issue_group_attack(self.workers.ready.random_group_of(2), target))
+            else:
+                actions.append(self.issue_unit_attack(self.workers.ready.random, target))
             # print(self.workers.random.ground_range)
 
         #if iteration == 1:
@@ -391,8 +397,8 @@ class MyBot(sc2.BotAI):
             self.expand_flag = 5
             if self.already_pending(self.th_type) < 3:  # expand "only" 3 locations at once
                 await self.expand_now(closest_to=self.workers.random.position)
-                if self.townhalls.amount < 4:
-                    await self.chat_send(f"Trying to expand!")
+                if self.townhalls.amount < 3:
+                    await self.chat_send(f"Let's expand! (flex)")
         # not yet
         else:
             self.expand_flag = 1  # <-- try again soon
@@ -713,7 +719,7 @@ class MyBot(sc2.BotAI):
 
         if len(self.owned_expansions) >= 3:
             workers = workers.closer_than(10, enemy_position)  # dont assign workers to defend
-            self.w_dist_flag = 10  # wait for 10s to re distribute workers
+            self.w_dist_flag = 5  # wait for 3s to re distribute workers
             #TODO: just remove this townhall temporarily from worker distribution function
             # (self.units = self.units.exclude_tag(tag_of_building) in the beginning of step)
 
@@ -747,12 +753,11 @@ class MyBot(sc2.BotAI):
         own_hp = 0
         own_dps = 0
         defenders = []
-        if len(self.def_force_tags) > 0:
-            # print("tags")
-            # print(f"{self.units.tags}")
-            # print(f"{list(self.def_force_tags.keys())}")
-            # print(f"{self.units.tags_in(list(self.def_force_tags.keys()))}")  # not by_tag but tags_in
 
+        # use existing defence first:
+        if len(self.def_force_tags) > 0:
+
+            # not by_tag but tags_in
             for old_member in self.units.tags_in(set(self.def_force_tags.keys())):
 
                 if own_hp <= (enemy_hp + 1) or own_dps <= (enemy_dps + 1):
@@ -760,11 +765,7 @@ class MyBot(sc2.BotAI):
                     own_hp += old_member.health + old_member.shield
                     own_dps += old_member.ground_dps
 
-        else:
-            print("setting up defence")
-
         if enemy_dps < 4:  # 1 worker or smthing like that
-            #use existing defence first:
 
             # defenders, own_hp, own_dps = self.create_army_group(army, enemy_hp, enemy_dps)
             for asset in army:
@@ -1539,7 +1540,7 @@ class MyBot(sc2.BotAI):
         if self.enemy_race is Race.Zerg and UnitTypeId.SPAWNINGPOOL in self.tech_goals and self.supply_used > 62:
             self.tech_goals.pop(UnitTypeId.SPAWNINGPOOL)
 
-        if self.tech_switch and (self.minerals > 480 or self.supply_used < 60):
+        if self.tech_switch and (self.minerals > 480 or self.supply_used < 60 or self.known_enemy_units.amount >= 3):
             actions.extend(self.macro_train_units())
 
         if race == Race.Protoss:
@@ -1566,12 +1567,27 @@ class MyBot(sc2.BotAI):
     def protoss_macro(self):
         actions = []
         actions.extend(self.spam_chronoboost())
+        if self.units.of_type(UnitTypeId.OBSERVER).amount < 2 and self.units.of_type(UnitTypeId.ROBOTICSFACILITY).amount > 0:
+            ao = self.request_observer()
+            if ao:
+                actions.append(ao)
         return actions
 
+    def request_observer(self):
+
+        observer = UnitTypeId.OBSERVER
+        robo = UnitTypeId.ROBOTICSFACILITY
+        buildings = self.units(robo).ready
+        if buildings.exists:
+            if self.can_afford(observer):
+                return buildings.random.train(observer)
+
+    def request_power(self):
+        # self.units.structure.filter(lambda s: not s.is_powered)
+        pass
+
     # chrono boost buildings with queued production
-
     # adopted from warpgate_push.py
-
     def chronoboost(self, nexus=None, target=None):
         if not nexus:
             nexus = self.townhalls.of_type(UnitTypeId.NEXUS).filter(lambda n: n.energy >= 50).random
@@ -1626,8 +1642,29 @@ class MyBot(sc2.BotAI):
         a = self.do_repairs()
         if a:
             actions.append(a)
+        if not self.check_building_flag:
+            actions.extend(self.continue_building())
+            self.check_building_flag = 5
         return actions
 
+    def continue_building(self):
+        actions = []
+        buildings = self.units.structure.not_ready
+        builders = self.workers.filter(lambda w: w.is_constructing_scv)
+        # for b in builders:
+        #     print(f"{b.orders}")
+        # example:
+        # [UnitOrder(AbilityData(name=CommandCenter), x: 58.5 y: 149.5 , 0.0)]
+        # TODO: maybe this can be optimized by checking if any building scv has order to build specific building
+        #  this seems to be fine for now
+        available = self.workers.collecting
+        for building in buildings:
+            if not builders.closer_than(4, building) and available.exists: #5 for cc are big
+                a = available.random_group_of(int(max(available.amount/4, 1))).prefer_close_to(building)
+                ab = a[0](AbilityId.SMART, building)
+                if ab:
+                    actions.append(ab)
+        return actions
     def morph_orbital(self):
         actions = []
         if self.units(UnitTypeId.BARRACKS).ready.exists and self.can_afford(UnitTypeId.ORBITALCOMMAND):  # check if orbital is affordable
