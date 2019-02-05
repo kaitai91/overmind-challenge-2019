@@ -8,13 +8,14 @@
 
 from sc2 import Race
 from sc2.ids.unit_typeid import *
+from sc2.ids.ability_id import *
 
 #NOTE: race_workers,race_townhalls and race_gas available for bot (following three will complement the file)
 TOWN_HALL_TYPES = {Race.Protoss: UnitTypeId.NEXUS, Race.Terran: UnitTypeId.COMMANDCENTER, Race.Zerg: UnitTypeId.HATCHERY}
 GAS_BUILDINGS = {Race.Protoss: UnitTypeId.ASSIMILATOR, Race.Terran: UnitTypeId.REFINERY, Race.Zerg: UnitTypeId.EXTRACTOR}
 WORKER_TYPES = {Race.Protoss: UnitTypeId.PROBE, Race.Terran: UnitTypeId.SCV, Race.Zerg: UnitTypeId.DRONE}
 
-#TODO: check UnitTypeIds for hellbat and swarmhost
+#TODO: check UnitTypeIds for swarmhost
 GATE_UNITS = {"Zealot": UnitTypeId.ZEALOT, "Sentry": UnitTypeId.SENTRY, "Stalker": UnitTypeId.STALKER,
               "Adept": UnitTypeId.ADEPT, "High Templar": UnitTypeId.HIGHTEMPLAR, "Dark Templar": UnitTypeId.DARKTEMPLAR}
 ROBO_UNITS = {"Observer": UnitTypeId.OBSERVER, "Warp Prism": UnitTypeId.WARPPRISM, "Immortal": UnitTypeId.IMMORTAL,
@@ -41,6 +42,55 @@ MORPH_UNITS = {UnitTypeId.OVERSEER: UnitTypeId.OVERLORD, UnitTypeId.BANELING: Un
                UnitTypeId.BROODLORD: UnitTypeId.CORRUPTOR}
 MORPH_BUILDINGS = {UnitTypeId.HIVE: UnitTypeId.LAIR, UnitTypeId.LAIR: UnitTypeId.HATCHERY,
                    UnitTypeId.GREATERSPIRE: UnitTypeId.SPIRE}
+
+MORPH = {
+    #protoss
+
+    #terran
+
+    #zerg
+    UnitTypeId.HATCHERY: AbilityId.UPGRADETOLAIR_LAIR, UnitTypeId.LAIR: AbilityId.UPGRADETOHIVE_HIVE,
+    UnitTypeId.SPIRE: AbilityId.UPGRADETOGREATERSPIRE_GREATERSPIRE,
+
+    UnitTypeId.OVERLORD: AbilityId.MORPH_OVERSEER, UnitTypeId.ZERGLING: AbilityId.MORPHZERGLINGTOBANELING_BANELING,
+    UnitTypeId.ROACH: AbilityId.MORPHTORAVAGER_RAVAGER, UnitTypeId.HYDRALISK: AbilityId.MORPH_LURKER,
+    UnitTypeId.CORRUPTOR: AbilityId.MORPHTOBROODLORD_BROODLORD, UnitTypeId.OVERLORDTRANSPORT: AbilityId.MORPH_OVERSEER
+}
+#secondary morph command(s) for units with more morph abilities (such as overlord)
+MORPH2 = {
+    # protoss
+
+    # terran
+
+    # zerg
+    UnitTypeId.OVERLORD: AbilityId.MORPH_OVERLORDTRANSPORT
+}
+
+#commands to change mode (such as siegetank siege mode, observer stationary mode, prism phasing mode etc.
+TRANSFORM = {
+    # protoss
+    UnitTypeId.GATEWAY: AbilityId.MORPH_WARPGATE, UnitTypeId.WARPGATE: AbilityId.MORPH_GATEWAY,
+
+    UnitTypeId.OBSERVER: AbilityId.MORPH_SURVEILLANCEMODE,
+    UnitTypeId.WARPPRISM: AbilityId.MORPH_WARPPRISMPHASINGMODE,
+
+    UnitTypeId.OBSERVERSIEGEMODE: AbilityId.MORPH_OBSERVERMODE,
+    UnitTypeId.WARPPRISMPHASING: AbilityId.MORPH_WARPPRISMTRANSPORTMODE,
+
+    # terran
+    UnitTypeId.SUPPLYDEPOT: AbilityId.MORPH_SUPPLYDEPOT_LOWER, UnitTypeId.HELLION: AbilityId.MORPH_HELLBAT,
+    UnitTypeId.SIEGETANK: AbilityId.SIEGEMODE_SIEGEMODE, UnitTypeId.LIBERATOR: AbilityId.MORPH_LIBERATORAGMODE,
+    UnitTypeId.VIKINGFIGHTER: AbilityId.MORPH_VIKINGASSAULTMODE,
+
+    UnitTypeId.SUPPLYDEPOTLOWERED: AbilityId.MORPH_SUPPLYDEPOT_RAISE, UnitTypeId.HELLIONTANK: AbilityId.MORPH_HELLION,
+    UnitTypeId.SIEGETANKSIEGED: AbilityId.UNSIEGE_UNSIEGE, UnitTypeId.LIBERATORAG: AbilityId.MORPH_LIBERATORAAMODE,
+    UnitTypeId.VIKINGASSAULT: AbilityId.MORPH_VIKINGFIGHTERMODE,
+
+    # zerg
+    UnitTypeId.OVERSEER: AbilityId.MORPH_OVERSIGHTMODE,
+
+    UnitTypeId.OVERSEERSIEGEMODE: AbilityId.MORPH_OVERSEERMODE,
+}
 
 UNITS_BY_FACILITY = \
     {Race.Protoss: {UnitTypeId.GATEWAY: GATE_UNITS, UnitTypeId.WARPGATE: GATE_UNITS,
