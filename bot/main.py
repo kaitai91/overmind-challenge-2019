@@ -760,8 +760,8 @@ class MyBot(sc2.BotAI):
                     own_hp += old_member.health + old_member.shield
                     own_dps += old_member.ground_dps
 
-        else:
-            print("setting up defence")
+        # else:
+        #     # print("setting up defence")
 
         if enemy_dps < 4:  # 1 worker or smthing like that
             #use existing defence first:
