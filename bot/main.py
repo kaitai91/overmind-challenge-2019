@@ -147,7 +147,6 @@ class MyBot(sc2.BotAI):
         self.tech_tree = racial.TECH_TREE[self.race]
         self.gas_type = racial.GAS_BUILDINGS[self.race]
 
-        self.set_racial_tech_goals(self.race)
         # print(self.tech_goals)
 
     async def on_step(self, iteration):
@@ -277,8 +276,8 @@ class MyBot(sc2.BotAI):
         #micro every max(0.1,clock_diff) if you have force
         if len(self.attack_force_tags) > 0 and (min(0.1, clock_diff) <= (self.clock - int(self.clock)) % max(0.1, clock_diff)): #micro every 0.1 second
         #if len(self.attack_force_tags) > 0 and (min(1,clock_diff) <= (self.clock - int(self.clock))):  # micro every second (capping if lags)
-            if int(self.clock) % 16 == 15 and clock_diff >= self.clock-int(self.clock):  #max once a second once in 33s
-                await self.chat_send(f"Attacking with: {len(self.attack_force_tags)}")
+            # if int(self.clock) % 16 == 15 and clock_diff >= self.clock-int(self.clock):  #max once a second once in 33s
+            #     await self.chat_send(f"Attacking with: {len(self.attack_force_tags)}")
 
             await self.attack_unit_micro()
 
@@ -348,6 +347,7 @@ class MyBot(sc2.BotAI):
 
         if not self.tech_switch and self.supply_used > 21:
             self.tech_switch = 1
+            self.set_racial_tech_goals(self.race)
 
             await self.chat_send(f"Initializing tech advancement procedures")
 
@@ -372,14 +372,14 @@ class MyBot(sc2.BotAI):
         # if iteration == 2:
         #     await self.chat_send(f"Main building is {self.townhalls[0].health}")
 
-        if iteration == 5:
-            #await self.chat_send(f"Debug args: {self.s_args}")
-            #await self.chat_send(f"time: {self.getTimeInSeconds()}")
-            await self.chat_send(f"I'm playing {self.race}")
-
-        if iteration == 7:
-            #await self.chat_send(f"time:{self.getTimeInSeconds()}")
-            await self.chat_send(f"You are {self.enemy_race}")
+        # if iteration == 5:
+        #     #await self.chat_send(f"Debug args: {self.s_args}")
+        #     #await self.chat_send(f"time: {self.getTimeInSeconds()}")
+        #     # await self.chat_send(f"I'm playing {self.race}")
+        #
+        # if iteration == 7:
+        #     #await self.chat_send(f"time:{self.getTimeInSeconds()}")
+        #     await self.chat_send(f"You are {self.enemy_race}")
 
         await self.do_actions(actions)
 
@@ -728,13 +728,13 @@ class MyBot(sc2.BotAI):
             condition = (own_hp >= enemy_hp and own_dps >= enemy_dps) or self.townhalls.amount < 2  # or self.clock<120
         if condition and len(defenders) > 0:
             actions.extend(self.issue_group_defence(defenders, enemy_position))
-            await self.chat_defending_taunt(enemy_position, workers.amount+army.amount, enemy_hp, own_hp, enemy_dps, own_dps)
+            # await self.chat_defending_taunt(enemy_position, workers.amount+army.amount, enemy_hp, own_hp, enemy_dps, own_dps)
 
         # retreat from strong enemy
         else:
             for defender in self.def_force_tags:
                 self.def_force_tags[defender]["retreat"] = 5
-            await self.chat_retreating(enemy_position, enemy_hp, enemy_dps)
+            # await self.chat_retreating(enemy_position, enemy_hp, enemy_dps)
 
         if len(actions) > 0:
             await self.do_actions(actions)
@@ -797,9 +797,6 @@ class MyBot(sc2.BotAI):
                 else:
                     break
         return defenders, own_dps, own_hp
-
-    #TODO: implement the micro function
-
 
     # from mass_reaper.py
     # stolen and modified from position.py
@@ -894,8 +891,6 @@ class MyBot(sc2.BotAI):
 
 
         # move towards to max unit range if enemy is closer than ??
-        #TODO: include air attack, not only ground
-        # maybe air targets arent needed here (mutas?)
         if unit.is_flying:
             enemyAirThreatsVeryClose = enemyAirThreatsClose.\
                 filter(lambda eu: eu.air_range < unit.air_range).\
@@ -993,8 +988,11 @@ class MyBot(sc2.BotAI):
             # print("using specific micro function")
             close_a_enemies = self.known_enemy_units.flying
             close_g_enemies = self.known_enemy_units.not_flying.exclude_type(CHANGELING)
-            close_enemy_structures = self.known_enemy_structures
-            action = MICRO_BY_TYPE[unit.type_id](unit, close_a_enemies or close_g_enemies or close_enemy_structures)  # "additive or"
+            known_enemies = close_a_enemies or close_g_enemies
+            # TODO: find out why this bugs units
+            # if not known_enemies.exists:
+            #     known_enemies = self.known_enemy_structures.not_flying
+            action = MICRO_BY_TYPE[unit.type_id](unit, known_enemies)# or close_enemy_structures)  # "additive or"
             # print(action)
             if action:
                 return action, False
@@ -1513,8 +1511,11 @@ class MyBot(sc2.BotAI):
                 if goal in {UnitTypeId.GATEWAY, UnitTypeId.WARPGATE, UnitTypeId.BARRACKS}:
                     if self.tech_goals[goal]["count"] < 10:
                         self.tech_goals[goal]["count"] += 1
-                elif self.tech_goals[goal]["count"] < 5:
+                elif self.tech_goals[goal]["count"] < 3:
                     self.tech_goals[goal]["count"] += 1
+
+        if self.enemy_race is Race.Zerg and UnitTypeId.SPAWNINGPOOL in self.tech_goals and self.supply_used > 62:
+            self.tech_goals.pop(UnitTypeId.SPAWNINGPOOL)
 
         if self.tech_switch and (self.minerals > 480 or self.supply_used < 60):
             actions.extend(self.macro_train_units())
@@ -1672,25 +1673,24 @@ class MyBot(sc2.BotAI):
                            UnitTypeId.ROACH)
 
         # hydras
-        # if self.enemy_race is not Race.Zerg:
-        #     self.set_tech_goal(UnitTypeId.HYDRALISKDEN, self.th_type, None, 1,
-        #                        UnitTypeId.HYDRALISK)
+        if self.enemy_race is not Race.Zerg:
+            self.set_tech_goal(UnitTypeId.HYDRALISKDEN, self.th_type, None, 1,
+                               UnitTypeId.HYDRALISK)
 
         # lurkers
-        self.set_tech_goal(UnitTypeId.LURKERDENMP, self.th_type, None, 1,
-                           UnitTypeId.LURKERMP)
+        # self.set_tech_goal(UnitTypeId.LURKERDENMP, self.th_type, None, 1,
+        #                    UnitTypeId.LURKERMP)
 
     def zerg_tech_mid(self):
-        pass
-        # if UnitTypeId.HYDRALISKDEN not in self.tech_goals:
-        #     print("adding hydraden")
-        #     self.set_tech_goal(UnitTypeId.HYDRALISKDEN, self.th_type, None, 1,
-        #                        UnitTypeId.HYDRALISK)
+        if UnitTypeId.HYDRALISKDEN not in self.tech_goals:
+            # print("adding hydraden")
+            self.set_tech_goal(UnitTypeId.HYDRALISKDEN, self.th_type, None, 1,
+                               UnitTypeId.HYDRALISK)
 
         # lurkers
-        # if UnitTypeId.LURKERDENMP not in self.tech_goals:
-        #     print("adding lurkerden")
-        #     self.set_tech_goal(UnitTypeId.LURKERDENMP, self.th_type, None, 1, UnitTypeId.LURKERMP)
+        if UnitTypeId.LURKERDENMP not in self.tech_goals:
+            # print("adding lurkerden")
+            self.set_tech_goal(UnitTypeId.LURKERDENMP, self.th_type, None, 1, UnitTypeId.LURKERMP)
 
     def zerg_macro(self):
         actions = []
@@ -1703,8 +1703,10 @@ class MyBot(sc2.BotAI):
             if a:
                 actions.append(a)
 
-        if self.supply_used > 150:
-            self.zerg_tech_mid()
+        if self.race is Race.Zerg:
+            if self.supply_used > 120 or (self.enemy_race is Race.Zerg and self.supply_used > 170):
+                self.zerg_tech_mid()
+
         return actions
 
     #following ones adopted (and modified) from hydralisk_push.py
