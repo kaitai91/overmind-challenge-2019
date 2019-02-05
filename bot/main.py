@@ -748,10 +748,10 @@ class MyBot(sc2.BotAI):
         own_dps = 0
         defenders = []
         if len(self.def_force_tags) > 0:
-            print("tags")
-            print(f"{self.units.tags}")
-            print(f"{list(self.def_force_tags.keys())}")
-            print(f"{self.units.tags_in(list(self.def_force_tags.keys()))}")  # not by_tag but tags_in
+            # print("tags")
+            # print(f"{self.units.tags}")
+            # print(f"{list(self.def_force_tags.keys())}")
+            # print(f"{self.units.tags_in(list(self.def_force_tags.keys()))}")  # not by_tag but tags_in
 
             for old_member in self.units.tags_in(set(self.def_force_tags.keys())):
 
