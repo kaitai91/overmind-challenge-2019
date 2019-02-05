@@ -202,7 +202,9 @@ class MyBot(sc2.BotAI):
 
         # if enemy_att_got_stronger:
         if m["pos"]:
-            await self.reinforce_defence()
+            ar = self.reinforce_defence()
+            if ar:
+                actions.extend(ar)
 
         if self.supply_left < self.townhalls.ready.amount and not self.pend_supply_flag and self.supply_cap < 200:
             self.pend_supply_flag = 1
@@ -662,7 +664,7 @@ class MyBot(sc2.BotAI):
             del (self.attack_force_tags[tg])
 
 
-    async def reinforce_defence(self):
+    def reinforce_defence(self):
 
         #shorten names
         m = self.enemy_att_str_max
@@ -682,7 +684,9 @@ class MyBot(sc2.BotAI):
         position = c["pos"]
         if len(self.attacking_enemy_units) > 0 and (d_hp > 0 or d_g_dps > 0 or len(self.def_force_tags) < 1):
             #await self.assign_defence(d_hp, d_g_dps, position)
-            await self.assign_defence(m["hp"], m["g_dps"], m["pos"])
+            ad = self.assign_defence(m["hp"], m["g_dps"], m["pos"])
+            if ad:
+                return ad
 
         # #not working (is_attacking) maybe only with own units...
         # if closest_enemy:
@@ -694,7 +698,7 @@ class MyBot(sc2.BotAI):
         #To be implemented
         pass
 
-    async def assign_defence(self, enemy_hp, enemy_dps, enemy_position):
+    def assign_defence(self, enemy_hp, enemy_dps, enemy_position):
 
         #print("trying to assign defence")
         army = self.units.ready.tags_not_in(self.def_force_tags).\
@@ -728,7 +732,7 @@ class MyBot(sc2.BotAI):
             condition = (own_hp >= enemy_hp and own_dps >= enemy_dps) or self.townhalls.amount < 2  # or self.clock<120
         if condition and len(defenders) > 0:
             actions.extend(self.issue_group_defence(defenders, enemy_position))
-            # await self.chat_defending_taunt(enemy_position, workers.amount+army.amount, enemy_hp, own_hp, enemy_dps, own_dps)
+            # self.chat_defending_taunt(enemy_position, workers.amount+army.amount, enemy_hp, own_hp, enemy_dps, own_dps)
 
         # retreat from strong enemy
         else:
@@ -737,13 +741,31 @@ class MyBot(sc2.BotAI):
             # await self.chat_retreating(enemy_position, enemy_hp, enemy_dps)
 
         if len(actions) > 0:
-            await self.do_actions(actions)
+            return actions
 
     def create_defence_group(self, army, enemy_dps, enemy_hp, workers):
         own_hp = 0
         own_dps = 0
         defenders = []
+        if len(self.def_force_tags) > 0:
+            print("tags")
+            print(f"{self.units.tags}")
+            print(f"{list(self.def_force_tags.keys())}")
+            print(f"{self.units.tags_in(list(self.def_force_tags.keys()))}")  # not by_tag but tags_in
+
+            for old_member in self.units.tags_in(set(self.def_force_tags.keys())):
+
+                if own_hp <= (enemy_hp + 1) or own_dps <= (enemy_dps + 1):
+                    defenders.append(old_member)
+                    own_hp += old_member.health + old_member.shield
+                    own_dps += old_member.ground_dps
+
+        else:
+            print("setting up defence")
+
         if enemy_dps < 4:  # 1 worker or smthing like that
+            #use existing defence first:
+
             # defenders, own_hp, own_dps = self.create_army_group(army, enemy_hp, enemy_dps)
             for asset in army:
                 if own_hp <= (enemy_hp + 1) or own_dps <= (enemy_dps + 1):
@@ -1446,8 +1468,8 @@ class MyBot(sc2.BotAI):
             else:  # defend with all
                 await self.chat_send(f"Location: {enemy_position}")
                 await self.chat_send(f"You Attack with: {len(self.attacking_enemy_units)} Units - {enemy_hp} total hp, {enemy_dps} total dps")
-                # await self.chat_send(f"I Defend with: {defender_amount} defenders - {own_hp} total hp, {own_dps} total dps")
-            self.def_msg_flag = 8
+                await self.chat_send(f"I Defend with: {defender_amount} defenders - {own_hp} total hp, {own_dps} total dps")
+            self.def_msg_flag = 2
 
     async def chat_retreating(self, attack_position, enemy_hp, enemy_dps):
         if len(self.def_force_tags) > 0:
