@@ -66,6 +66,10 @@ CHANGELING = {UnitTypeId.CHANGELING, UnitTypeId.CHANGELINGZEALOT,
 
 WORKER_UPPER_LIMIT = 99
 
+#only terran units
+MECHANICALS = [UnitTypeId.SCV, ]
+MECHANICALS.extend(list(racial.STARPORT_UNITS.values())+list(racial.FACTORY_UNITS.values()))
+
 # Bots are created as classes and they need to have on_step method defined.
 # Do not change the name of the class!
 class MyBot(sc2.BotAI):
@@ -145,7 +149,7 @@ class MyBot(sc2.BotAI):
         self.w_type = racial.WORKER_TYPES[self.race]
         self.prod_bs = racial.PROD_B_TYPES[self.race]
         self.s_args = racial.get_supply_args(self.race) #<- method
-        self.tech_tree = racial.TECH_TREE[self.race]
+        self.tech_tree = racial.BUILDING_TECH_TREE[self.race]
         self.gas_type = racial.GAS_BUILDINGS[self.race]
 
         # print(self.tech_goals)
@@ -949,7 +953,7 @@ class MyBot(sc2.BotAI):
                 return action  # don't execute any of the following
 
         # move to nearest enemy ground unit/building because no enemy unit is closer than 5
-        allEnemyGroundUnits = self.known_enemy_units.not_flying
+        allEnemyGroundUnits = self.known_enemy_units.not_flying or self.known_enemy_structures.not_flying
         if allEnemyGroundUnits.exists:
             closestEnemy = allEnemyGroundUnits.closest_to(unit)
             action = unit.move(closestEnemy)
@@ -984,9 +988,10 @@ class MyBot(sc2.BotAI):
         if (ret > 4 or (hpc < hp_lower_bound and no_shield)) and self.townhalls.ready.amount > 0:
             if unit.is_burrowed:
                 action = unit(AbilityId.BURROWUP)
+                return action, False
             else:
                 action = self.unit_retreat(unit, self.townhalls.ready.random)
-            return action, True  # tb_removed.append(unit_tag)
+                return action, True  # tb_removed.append(unit_tag)
 
         # check if less than 50% hp and lost hp since last tick (townhall is retreating point)
         # --> fall back and come back later
@@ -1857,11 +1862,8 @@ def uniques_by_type_id(unit_list):
     return dict((obj.type_id, obj) for obj in unit_list).values()
 
 def check_if_mechanical(unit_list):
-    #only terran units
-    mechanicals = [UnitTypeId.SCV, ]
-    mechanicals.extend(list(racial.STARPORT_UNITS.values())+list(racial.FACTORY_UNITS.values()))
 
     is_mech = unit_list.structure
-    is_mech.extend(unit_list.not_structure.of_type(mechanicals))
+    is_mech.extend(unit_list.not_structure.of_type(MECHANICALS))
     return is_mech
 
