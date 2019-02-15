@@ -31,7 +31,10 @@ STARPORT_UNITS = {"Viking": UnitTypeId.VIKINGFIGHTER, "Medivac": UnitTypeId.MEDI
                   "Banshee": UnitTypeId.BANSHEE, "Battlecruiser": UnitTypeId.BATTLECRUISER,
                   "Liberator": UnitTypeId.LIBERATOR}
 
-ADDONS = {"Tech Lab": AbilityId.BUILD_TECHLAB, "Reactor": AbilityId.BUILD_REACTOR}
+# techlab, reactor
+BUILD_ADDONS = [AbilityId.BUILD_TECHLAB, AbilityId.BUILD_REACTOR]
+REACTORS = {UnitTypeId.BARRACKSREACTOR, UnitTypeId.FACTORYREACTOR, UnitTypeId.STARPORTREACTOR}
+TECH_LABS = {UnitTypeId.BARRACKSTECHLAB, UnitTypeId.FACTORYTECHLAB, UnitTypeId.STARPORTTECHLAB}
 
 HATCHERY_UNITS = {"Larva": UnitTypeId.LARVA, "Queen": UnitTypeId.QUEEN}
 LARVA_UNITS = {"Drone": UnitTypeId.DRONE, "Overlord": UnitTypeId.OVERLORD, "Mutalisk": UnitTypeId.MUTALISK,
