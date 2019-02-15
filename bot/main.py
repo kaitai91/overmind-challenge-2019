@@ -235,7 +235,7 @@ class MyBot(sc2.BotAI):
             # return
 
         if not self.racial_macro_flag:
-            actions.extend(self.macro_boost(self.race))
+            actions.extend(await self.macro_boost(self.race))
             self.racial_macro_flag = .97 #arbitrary cooldown
 
         if self.minerals > 150 and (self.vespene / (self.minerals+1)) <= 0.6: #vespene count less than 60% of minerals
@@ -474,10 +474,20 @@ class MyBot(sc2.BotAI):
 
     def train_units(self, building_type, unit_type, max_amount=None):
         actions = []
-        if max_amount:
-            buildings = self.units(building_type).ready.noqueue.random_group_of(max_amount)
+        buildings = self.units(building_type).ready
+        if self.race == Race.Terran:  # include buildings with reactor and  at most 2 units in production
+            reactor_tags = self.units.structure.of_type(racial.REACTORS).tags #owned reactors and their tags
+            # buildings_with_reactor = self.units(building_type).ready.filter(lambda s: s.add_on_tag in reactor_tags)
+            # following should be enough (keep these comments while testing)
+            buildings_with_reactor = \
+                buildings.filter(lambda s: s.add_on_tag in reactor_tags).filter(lambda rb: len(rb.orders) < 2)
+            # print(reactor_tags)
+            # print(buildings_with_reactor)
+            buildings = buildings.noqueue or buildings_with_reactor
         else:
-            buildings = self.units(building_type).ready.noqueue
+            buildings = buildings.noqueue
+        if max_amount:
+            buildings = buildings.random_group_of(max_amount)
         for prod_b in buildings:
             if self.can_afford(unit_type):
                 if self.race == Race.Zerg:
@@ -1528,9 +1538,18 @@ class MyBot(sc2.BotAI):
         # print(actions)
         return actions
 
-    def macro_boost(self, race):
+    async def macro_boost(self, race):
 
         actions = []
+
+        if race == Race.Protoss:
+            actions.extend(self.protoss_macro())
+        if race == Race.Terran:
+            actions.extend(await self.terran_macro())
+        if race == Race.Zerg:
+            actions.extend(self.zerg_macro())
+
+
         if self.minerals > 1200 and self.supply_used > 180 or self.race is not Race.Zerg:
             self.set_air_tech_goal()
 
@@ -1548,12 +1567,6 @@ class MyBot(sc2.BotAI):
         if self.tech_switch and (self.minerals > 480 or self.supply_used < 60 or self.known_enemy_units.amount >= 3):
             actions.extend(self.macro_train_units())
 
-        if race == Race.Protoss:
-            actions.extend(self.protoss_macro())
-        if race == Race.Terran:
-            actions.extend(self.terran_macro())
-        if race == Race.Zerg:
-            actions.extend(self.zerg_macro())
         return actions
 
     # PROTOSS:
@@ -1640,7 +1653,7 @@ class MyBot(sc2.BotAI):
     #make orbitals and drop mules (from mass_reaper.py)
 
     # morph commandcenter to orbitalcommand
-    def terran_macro(self):
+    async def terran_macro(self):
         actions = []
         actions.extend(self.morph_orbital())
         actions.extend(self.drop_mules())
@@ -1649,12 +1662,13 @@ class MyBot(sc2.BotAI):
             actions.append(a)
         if not self.check_building_flag:
             actions.extend(self.continue_building())
+            actions.extend(await self.build_addons(UnitTypeId.BARRACKS))#build tech labs
             self.check_building_flag = 5
         return actions
 
     def continue_building(self):
         actions = []
-        buildings = self.units.structure.not_ready
+        buildings = self.units.structure.not_ready.exclude_type(racial.REACTORS or racial.TECH_LABS)
         builders = self.workers.filter(lambda w: w.is_constructing_scv)
         # for b in builders:
         #     print(f"{b.orders}")
@@ -1705,7 +1719,7 @@ class MyBot(sc2.BotAI):
             else:
                 return
         if not target:
-            targets = self.units.tags_not_in({scv, }).closer_than(10, scv)
+            targets = self.units.ready.tags_not_in({scv, }).closer_than(10, scv)  # hard limit of 10 might be bad in some cases
             if targets.amount > 0:
                 targets = check_if_mechanical(targets).filter(lambda u: u.health_percentage < 1)
                 if targets.amount > 0: #dont repair if more income is needed
@@ -1719,6 +1733,43 @@ class MyBot(sc2.BotAI):
             return scv.repair(target)
         else:
             self.repair_flag = 0.34
+
+    async def build_addon(self, building, reactor=True, location=None):
+        action = None
+        if not location:
+            can_place = await self.can_place_addon(building)
+            if can_place:
+                if reactor:
+                    action = building(racial.BUILD_ADDONS[1])
+                else:
+                    action = building(racial.BUILD_ADDONS[0])
+
+        # else: # to be implemented: (lift off, place addon to specified location - must be done in different steps)
+
+        return action
+
+    async def can_place_addon(self, building):
+        addon_offset = position_imported.Point2((2, 0))
+        can_place = await self.can_place(UnitTypeId.SUPPLYDEPOT, building.position.offset(addon_offset))
+        if can_place:
+            return True
+        else:
+            return False
+
+    async def build_addons(self, type_id, reactor=True, max_amount=0):
+        buildings = self.units.structure.of_type(type_id).not_flying.noqueue
+        actions = []
+        count = 0
+        if buildings.exists:
+            for b in buildings:
+                a = await self.build_addon(b, reactor)
+                if a:
+                    actions.append(a)
+                    count += 1
+                    if count >= max_amount:
+                        break
+        return actions
+
     # ZERG:
     # make queens and inject larvae
 
