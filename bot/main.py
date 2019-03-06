@@ -1,35 +1,28 @@
 #TODO: Ideas:
 # add scouting, reactions for scout info
-# change iteration to game time references (under testing) <-- game time is a bit off but reasonable atm
-# improve tech tree (and add function: get_tech_needed(BUILDING/UNIT) )
-# use numpy (after the challenge is over - not supported there)
+# use numpy (for faster numeric calculations)
 
 #TODO: flags/vars
-# make __init__ and put object variables in that (DONE)
-# put all similar variables into collections
+# put all similar variables into collections (DONE - partially)
 # ideas:
-# make flags in one variable and reduce everything at once each step (numpy needed)
+# make flags in one variable and reduce everything at once each step (numpy needed for easy implementation)
 # change (tag data) variables in to numpy arrays for quicker operations
 # make/use heatmap for enemy locations to defend (maybe with connected components)
 
 #TODO: macro:
 # save researched tech somewhere and fetch trainable units from there (for more efficient training esp. with zerg)
-# add more production facilities / tech / whatever when close to 200/200 with big resource bank
+# add more production facilities / tech / whatever when close to 200/200 with big resource bank (DONE - simple solution)
 # make defence better by updating defence calculations and reinforcing when needed
-# take air hp into account in enemy att_str_calc
 # ideas:
 # multiple attack/defence groups
-# implement anti-air defence
+# implement anti-air defence (DONE - kinda)
+# combine air and ground hp & dps and make defence group based on that
 # make priority queue for different macro actions
 # decide which actions can be skipped every now and then
 # make priority decision based on game state (consider this with/instead of timed functions)
-# prioritizing buildings/tech/workers/army <-- implement this
+# prioritizing buildings/tech/workers/army <-- implement this (Already have: hard coded limits for workers)
 
 #TODO: micro:
-# IMPORTANT: Viking micro (mode change depending on enemy unit at minimum - air/ground)
-# Add constraint to remove attack group once you got to the target point and no enemies available (DONE)
-# fix retreat (micro) for other than workers
-# add unit micro for ranged units
 # prioritize low hp/ high dps enemies in the attack range
 # make micro more efficient with big army (take nearby units into account when moving)
 # ideas:
@@ -60,6 +53,8 @@ else:
 
 # STATIC VARS:
 
+CREEP_TUMORS = {UnitTypeId.CREEPTUMOR, UnitTypeId.CREEPTUMORBURROWED,
+                UnitTypeId.CREEPTUMORMISSILE, UnitTypeId.CREEPTUMORQUEEN}
 CHANGELING = {UnitTypeId.CHANGELING, UnitTypeId.CHANGELINGZEALOT,
               UnitTypeId.CHANGELINGMARINE, UnitTypeId.CHANGELINGMARINESHIELD,
               UnitTypeId.CHANGELINGZERGLING, UnitTypeId.CHANGELINGZERGLINGWINGS}
@@ -118,7 +113,6 @@ class MyBot(sc2.BotAI):
         # "hp_prev":unit.health_prev (int),
         # "target": Pos, # defending position / enemy unit position
         # "orig": Pos} # original defending position
-
 
         self.tech_goals = dict()  # dictionary of tech goals and units (the first item has priority).
         # goal[building_type] = {"count": (int), "unit": (unit_type)}
@@ -306,15 +300,14 @@ class MyBot(sc2.BotAI):
                 ((len(self.attack_force_tags)+len(self.def_force_tags)) <
                  (self.units.not_structure.not_flying.amount/2 + 1)):
 
-            # "fixed": uncomment to have simplest winning strategy! LOL
-            # target = None  #not needed
+            #set new attack_flag
+            enemy_buildings = self.known_enemy_structures().not_flying.exclude_type(CREEP_TUMORS)
             if not self.killed_start_base:
                 target = self.enemy_start_locations[0]
-                enemy_buildings = self.known_enemy_structures().not_flying
                 if enemy_buildings.amount > 0:
                     target = enemy_buildings.closest_to(self.townhalls.random.position).position
                 self.attack_flag = 120  # seconds
-            elif len(self.known_enemy_structures.not_flying) > 0:
+            elif enemy_buildings.amount > 0:
                 target = self.known_enemy_structures.not_flying[0].position
                 self.attack_flag = 60  # seconds
             else:
@@ -328,6 +321,8 @@ class MyBot(sc2.BotAI):
                 if self.killed_start_base > 360360*2:#<-not realistic to happen :D
                     self.killed_start_base %= 360360
                 self.attack_flag = 10  # seconds
+
+            #attack based on new attack flag
             if self.attack_flag > 20:
                 army = self.units.not_structure.exclude_type([self.w_type, UnitTypeId.OVERLORD, UnitTypeId.MULE, UnitTypeId.QUEEN])
                 actions.extend(self.issue_group_attack(army, target))
@@ -992,35 +987,33 @@ class MyBot(sc2.BotAI):
         hpc = tags[unit_tag]["hp_curr"]
         hpp = tags[unit_tag]["hp_prev"]
         max_hp_sh = unit.health_max + unit.shield_max
-
-        # check if low hp or retreating flag (townhall is retreating point) --> retreat
-        no_shield = not unit.shield > unit.health
-        if (ret > 4 or (hpc < hp_lower_bound and no_shield)) and self.townhalls.ready.amount > 0:
-            if unit.is_burrowed:
-                action = unit(AbilityId.BURROWUP)
-                return action, False
-            else:
-                action = self.unit_retreat(unit, self.townhalls.ready.random)
-                return action, True  # tb_removed.append(unit_tag)
-
-        # check if less than 50% hp and lost hp since last tick (townhall is retreating point)
-        # --> fall back and come back later
-        # if unit has shield use shield as indicator
-        hp_less_than_half_more_than_lower_limit = hpc < (max(min(max_hp_sh / 2, unit.health_max), hp_lower_bound))
-
-        if (not no_shield or hp_less_than_half_more_than_lower_limit) and hpc < hpp:
-            # if hpc < (max(min(max_hp_sh/2, unit.health_max), min_hp)) and hpc < hpp:
-            if self.townhalls.amount > 0:
+        baneling_with_low_hp = (unit.type_id == UnitTypeId.BANELING and hpc < 18)
+        if not baneling_with_low_hp:  # dont retreat with low hp banes
+            # check if low hp or retreating flag (townhall is retreating point) --> retreat
+            no_shield = not unit.shield > unit.health
+            if (ret > 4 or (hpc < hp_lower_bound and no_shield)) and self.townhalls.ready.amount > 0:
                 if unit.is_burrowed:
                     action = unit(AbilityId.BURROWUP)
+                    return action, False
                 else:
-                    action = self.unit_retreat(unit, self.townhalls.random)
-                tags[unit_tag]["retreat"] += 1
-                return action, False
-            tags[unit_tag]["retreat"] += 1
+                    action = self.unit_retreat(unit, self.townhalls.ready.random)
+                    return action, True  # tb_removed.append(unit_tag)
 
-        # find out a good way for this..
-        # action = None
+            # check if less than 50% hp and lost hp since last tick (townhall is retreating point)
+            # --> fall back and come back later
+            # if unit has shield use shield as indicator
+            hp_less_than_half_more_than_lower_limit = hpc < (max(min(max_hp_sh / 2, unit.health_max), hp_lower_bound))
+
+            if (not no_shield or hp_less_than_half_more_than_lower_limit) and hpc < hpp:
+                # if hpc < (max(min(max_hp_sh/2, unit.health_max), min_hp)) and hpc < hpp:
+                if self.townhalls.amount > 0:
+                    if unit.is_burrowed:
+                        action = unit(AbilityId.BURROWUP)
+                    else:
+                        action = self.unit_retreat(unit, self.townhalls.random)
+                    tags[unit_tag]["retreat"] += 1
+                    return action, False
+                tags[unit_tag]["retreat"] += 1
 
         if unit.type_id in MICRO_BY_TYPE:
             # print("using specific micro function")
@@ -1650,9 +1643,6 @@ class MyBot(sc2.BotAI):
         # self.set_tech_goal(UnitTypeId.TECHLAB, self.th_type, UnitTypeId.FACTORY, 2,
         #                    UnitTypeId.HELLIONTANK)
 
-    #make orbitals and drop mules (from mass_reaper.py)
-
-    # morph commandcenter to orbitalcommand
     async def terran_macro(self):
         actions = []
         actions.extend(self.morph_orbital())
@@ -1662,7 +1652,7 @@ class MyBot(sc2.BotAI):
             actions.append(a)
         if not self.check_building_flag:
             actions.extend(self.continue_building())
-            actions.extend(await self.build_addons(UnitTypeId.BARRACKS))#build tech labs
+            actions.extend(await self.build_addons({UnitTypeId.BARRACKS}))#build tech labs UnitTypeId.BARRACKSFLYING?
             self.check_building_flag = 5
         return actions
 
@@ -1684,6 +1674,9 @@ class MyBot(sc2.BotAI):
                 if ab:
                     actions.append(ab)
         return actions
+
+    # make orbitals and drop mules (from mass_reaper.py)
+    # morph commandcenter to orbitalcommand
     def morph_orbital(self):
         actions = []
         if self.units(UnitTypeId.BARRACKS).ready.exists and self.can_afford(UnitTypeId.ORBITALCOMMAND):  # check if orbital is affordable
@@ -1737,13 +1730,22 @@ class MyBot(sc2.BotAI):
     async def build_addon(self, building, reactor=True, location=None):
         action = None
         if not location:
-            can_place = await self.can_place_addon(building)
-            if can_place:
-                if reactor:
-                    action = building(racial.BUILD_ADDONS[1])
+            if not building.is_flying:
+                # print("not flying")
+                can_place = await self.can_place_addon(building)
+                if can_place:
+                    if reactor:
+                        action = building(racial.BUILD_ADDONS[1])
+                    else:
+                        action = building(racial.BUILD_ADDONS[0])
                 else:
-                    action = building(racial.BUILD_ADDONS[0])
-
+                    building(AbilityId.LIFT)
+            # else:  #not working
+            #     print("flying")
+            #     if reactor:
+            #         action = building(racial.BUILD_ADDONS[1])
+            #     else:
+            #         action = building(racial.BUILD_ADDONS[0])
         # else: # to be implemented: (lift off, place addon to specified location - must be done in different steps)
 
         return action
@@ -1757,7 +1759,8 @@ class MyBot(sc2.BotAI):
             return False
 
     async def build_addons(self, type_id, reactor=True, max_amount=0):
-        buildings = self.units.structure.of_type(type_id).not_flying.noqueue
+        # buildings = self.units.structure.of_type(type_id).not_flying.noqueue
+        buildings = self.units.structure.of_type(type_id).noqueue.filter(lambda st: st.add_on_tag == 0)
         actions = []
         count = 0
         if buildings.exists:
