@@ -1513,7 +1513,7 @@ class MyBot(sc2.BotAI):
 
     # MACRO FOR DIFFERENT RACES:
 
-    def macro_train_units(self):
+    async def macro_train_units(self):
         actions = []
         for goal in self.tech_goals:
             if self.units.structure.ready.of_type(goal).amount > 0: #if we have building ready
@@ -1523,9 +1523,22 @@ class MyBot(sc2.BotAI):
                         unit = racial.MORPH_UNITS[unit]
                     action = self.train_units(self.th_type, unit)
 
+                elif self.race is Race.Terran:
+                    facility = self.tech_goals[goal]["prod"]
+                    if unit not in racial.NEEDS_TECHLAB:
+                        action = self.train_units(facility, unit)
+                    else:
+                        buildings = self.units.structure.of_type(facility).noqueue.filter(lambda st: st.add_on_tag != 0)
+                        if buildings.exists:  # noqueue makes sure the addon is also finished
+                            for b in buildings:
+                                a = b.train(unit)
+                                if a:
+                                    actions.append(a)
+                        else:
+                            action = await self.build_addons(facility, False)
                 else:
                     facility = self.tech_goals[goal]["prod"]
-                    action = self.train_units(facility, unit)
+                    actions = self.train_units(facility, unit)
                 if action:
                     actions.extend(action)
         # print(actions)
@@ -1558,7 +1571,7 @@ class MyBot(sc2.BotAI):
             self.tech_goals.pop(UnitTypeId.SPAWNINGPOOL)
 
         if self.tech_switch and (self.minerals > 480 or self.supply_used < 60 or self.known_enemy_units.amount >= 3):
-            actions.extend(self.macro_train_units())
+            actions.extend(await self.macro_train_units())
 
         return actions
 
@@ -1636,17 +1649,17 @@ class MyBot(sc2.BotAI):
         self.set_tech_goal(UnitTypeId.BARRACKS, self.th_type, UnitTypeId.BARRACKS, 4, UnitTypeId.MARINE)
 
         # hellbats
-        self.set_tech_goal(UnitTypeId.ARMORY, self.th_type, UnitTypeId.FACTORY, 2,
-                           UnitTypeId.HELLIONTANK)
-
-        # tanks #TODO: make building techlab possible
-        # self.set_tech_goal(UnitTypeId.TECHLAB, self.th_type, UnitTypeId.FACTORY, 2,
+        # self.set_tech_goal(UnitTypeId.ARMORY, self.th_type, UnitTypeId.FACTORY, 2,
         #                    UnitTypeId.HELLIONTANK)
+
+        # tanks #TODO: make building techlab possible (DONE)
+        self.set_tech_goal(UnitTypeId.FACTORY, self.th_type, UnitTypeId.FACTORY, 2,
+                           UnitTypeId.SIEGETANK)
 
     async def terran_macro(self):
         actions = []
         actions.extend(self.morph_orbital())
-        actions.extend(self.drop_mules())
+        actions.extend(self.drop_mules(save_scans=0))
         a = self.do_repairs()
         if a:
             actions.append(a)
@@ -1658,7 +1671,9 @@ class MyBot(sc2.BotAI):
 
     def continue_building(self):
         actions = []
-        buildings = self.units.structure.not_ready.exclude_type(racial.REACTORS or racial.TECH_LABS)
+        # FIXME: Find out why tech labs bug in this
+        buildings = self.units.structure.not_ready.exclude_type(
+            set(racial.TECHLABS).union(racial.REACTORS).union(racial.TECHREACTORS))
         builders = self.workers.filter(lambda w: w.is_constructing_scv)
         # for b in builders:
         #     print(f"{b.orders}")
@@ -1668,7 +1683,7 @@ class MyBot(sc2.BotAI):
         #  this seems to be fine for now
         available = self.workers.collecting
         for building in buildings:
-            if not builders.closer_than(4, building) and available.exists: #5 for cc are big
+            if available.exists and not builders.closer_than(4, building): #5 for cc are big
                 a = available.random_group_of(int(max(available.amount/4, 1))).prefer_close_to(building)
                 ab = a[0](AbilityId.SMART, building)
                 if ab:
@@ -1685,23 +1700,32 @@ class MyBot(sc2.BotAI):
 
         return actions
 
-    def drop_mules(self, mf=None):
+    def drop_mules(self, mf=None, save_scans=1):
+        #TODO: make possible to save more than 1 scan per oc (exact amounts)
         actions = []
         if not mf:
             for oc in self.units(UnitTypeId.ORBITALCOMMAND).filter(lambda x: x.energy >= 50):
+                if save_scans:
+                    save_scans -= 1
+                    if oc.energy < 100:
+                        continue
                 mfs = self.state.mineral_field.closer_than(10, oc)
                 if mfs:
                     mf = max(mfs, key=lambda x: x.mineral_contents)
                     actions.append(oc(AbilityId.CALLDOWNMULE_CALLDOWNMULE, mf))
         else:
             for oc in self.units(UnitTypeId.ORBITALCOMMAND).filter(lambda x: x.energy >= 50):
+                if save_scans:
+                    save_scans -= 1
+                    if oc.energy < 100:
+                        continue
                 actions.append(oc(AbilityId.CALLDOWNMULE_CALLDOWNMULE, mf))
 
         return actions
 
     def do_repairs(self, scv=None, target=None, no_checks=False):
 
-        if (self.repair_flag or self.workers.amount < 8) and not no_checks:
+        if (self.repair_flag or self.workers.amount < 8) and not no_checks:  # dont repair if more income is needed
             return
         # print("in do_repairs")
         if not scv:
@@ -1715,7 +1739,7 @@ class MyBot(sc2.BotAI):
             targets = self.units.ready.tags_not_in({scv, }).closer_than(10, scv)  # hard limit of 10 might be bad in some cases
             if targets.amount > 0:
                 targets = check_if_mechanical(targets).filter(lambda u: u.health_percentage < 1)
-                if targets.amount > 0: #dont repair if more income is needed
+                if targets.amount > 0:
                     target = targets[0]
                     # print(target.health)
 
