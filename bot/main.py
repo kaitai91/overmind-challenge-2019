@@ -46,10 +46,12 @@ import math
 #code snippets for different races
 if __name__ == '__main__':
     import racial
-    import unit_micro
 else:
     import bot.racial as racial
     from bot.unit_micro import MICRO_BY_TYPE
+    import bot.protoss as protoss
+    import bot.terran as terran
+    import bot.zerg as zerg
 
 # STATIC VARS:
 
@@ -61,9 +63,6 @@ CHANGELING = {UnitTypeId.CHANGELING, UnitTypeId.CHANGELINGZEALOT,
 
 WORKER_UPPER_LIMIT = 99
 
-#only terran units
-MECHANICALS = [UnitTypeId.SCV, ]
-MECHANICALS.extend(list(racial.STARPORT_UNITS.values())+list(racial.FACTORY_UNITS.values()))
 
 # Bots are created as classes and they need to have on_step method defined.
 # Do not change the name of the class!
@@ -147,6 +146,13 @@ class MyBot(sc2.BotAI):
         self.gas_type = racial.GAS_BUILDINGS[self.race]
 
         # print(self.tech_goals)
+        if self.race == Race.Protoss:
+            self.macro_bot = protoss.ProtossMacroBot(self)
+        elif self.race == Race.Terran:
+            self.macro_bot = terran.TerranMacroBot(self)
+        else:  # self.race == Race.Zerg:
+            self.macro_bot = zerg.ZergMacroBot(self)
+
 
     async def on_step(self, iteration):
 
@@ -1318,6 +1324,14 @@ class MyBot(sc2.BotAI):
             ready_types = [b.type_id for b in ready_buildings]
             available_tech = racial.get_available_buildings(self.race, ready_types)
             available_new = set(available_tech).difference(ready_types)
+
+            # TODO: make sure the bot wont crash if there is wrong tech goal for it (such as hydraliskden for protoss)
+            # if not whole_path or not available_new:
+            #     print(tech_goal)
+            #     print(whole_path)
+            #     print(available_new)
+            #     print(available_tech)
+
             available_need = available_new.intersection(whole_path)
             if len(available_need) > 0:
                 self.tech_goals[tech_goal]["step"] = available_need.pop()  # assume one path for tech
@@ -1510,7 +1524,6 @@ class MyBot(sc2.BotAI):
         if goal_building not in self.tech_goals:
             self.set_tech_goal(goal_building, self.th_type, goal_building, 5, goal_unit)  # air tech
 
-
     # MACRO FOR DIFFERENT RACES:
 
     async def macro_train_units(self):
@@ -1530,15 +1543,17 @@ class MyBot(sc2.BotAI):
                     else:
                         buildings = self.units.structure.of_type(facility).noqueue.filter(lambda st: st.add_on_tag != 0)
                         if buildings.exists:  # noqueue makes sure the addon is also finished
+                            action = []
                             for b in buildings:
                                 a = b.train(unit)
                                 if a:
-                                    actions.append(a)
+                                    action.append(a)
                         else:
                             action = await self.build_addons(facility, False)
+
                 else:
                     facility = self.tech_goals[goal]["prod"]
-                    actions = self.train_units(facility, unit)
+                    action = self.train_units(facility, unit)
                 if action:
                     actions.extend(action)
         # print(actions)
@@ -1547,14 +1562,7 @@ class MyBot(sc2.BotAI):
     async def macro_boost(self, race):
 
         actions = []
-
-        if race == Race.Protoss:
-            actions.extend(self.protoss_macro())
-        if race == Race.Terran:
-            actions.extend(await self.terran_macro())
-        if race == Race.Zerg:
-            actions.extend(self.zerg_macro())
-
+        actions.extend(await self.macro_bot.general_macro())
 
         if self.minerals > 1200 and self.supply_used > 180 or self.race is not Race.Zerg:
             self.set_air_tech_goal()
@@ -1567,341 +1575,13 @@ class MyBot(sc2.BotAI):
                 elif self.tech_goals[goal]["count"] < 3:
                     self.tech_goals[goal]["count"] += 1
 
-        if self.enemy_race is Race.Zerg and UnitTypeId.SPAWNINGPOOL in self.tech_goals and self.supply_used > 62:
-            self.tech_goals.pop(UnitTypeId.SPAWNINGPOOL)
+        # if self.enemy_race is Race.Zerg and UnitTypeId.SPAWNINGPOOL in self.tech_goals and self.supply_used > 62:
+        #     self.tech_goals.pop(UnitTypeId.SPAWNINGPOOL)
 
         if self.tech_switch and (self.minerals > 480 or self.supply_used < 60 or self.known_enemy_units.amount >= 3):
             actions.extend(await self.macro_train_units())
 
         return actions
-
-    # PROTOSS:
-
-    def protoss_tech(self):
-        # zealots
-        self.set_tech_goal(UnitTypeId.GATEWAY, self.th_type, UnitTypeId.GATEWAY, 2, UnitTypeId.ZEALOT)
-
-        # immortals
-        # self.set_tech_goal(UnitTypeId.ROBOTICSFACILITY, self.th_type, UnitTypeId.ROBOTICSFACILITY, 2, UnitTypeId.IMMORTAL)
-
-        # colossi
-        self.set_tech_goal(UnitTypeId.ROBOTICSBAY, self.th_type, UnitTypeId.ROBOTICSFACILITY, 2,
-                           UnitTypeId.COLOSSUS)
-
-    def protoss_macro(self):
-        actions = []
-        actions.extend(self.spam_chronoboost())
-        if self.units.of_type(UnitTypeId.OBSERVER).amount < 2 and self.units.of_type(UnitTypeId.ROBOTICSFACILITY).amount > 0:
-            ao = self.request_observer()
-            if ao:
-                actions.append(ao)
-        return actions
-
-    def request_observer(self):
-
-        observer = UnitTypeId.OBSERVER
-        robo = UnitTypeId.ROBOTICSFACILITY
-        buildings = self.units(robo).ready
-        if buildings.exists:
-            if self.can_afford(observer):
-                return buildings.random.train(observer)
-
-    def request_power(self):
-        # self.units.structure.filter(lambda s: not s.is_powered)
-        pass
-
-    # chrono boost buildings with queued production
-    # adopted from warpgate_push.py
-    def chronoboost(self, nexus=None, target=None):
-        if not nexus:
-            nexus = self.townhalls.of_type(UnitTypeId.NEXUS).filter(lambda n: n.energy >= 50).random
-
-        if not target:
-            target = self.units.structure.ready.filter(lambda s: not s.noqueue). \
-                filter(lambda s1: not s1.has_buff(BuffId.CHRONOBOOSTENERGYCOST)).random
-
-        if nexus and target:
-            return nexus(AbilityId.EFFECT_CHRONOBOOSTENERGYCOST, target)
-
-    def spam_chronoboost(self, nexi=None, targets=None):
-        actions = []
-        if not nexi:
-            nexi = self.townhalls.of_type(UnitTypeId.NEXUS).filter(lambda n: n.energy >= 50)
-
-        if not targets:
-            targets = self.units.structure.ready.filter(lambda s: not s.noqueue). \
-                filter(lambda s1: not s1.has_buff(BuffId.CHRONOBOOSTENERGYCOST))
-
-        for nexus in nexi:
-            if targets:
-                target = targets.pop()
-                action = self.chronoboost(nexus, target)
-                if action:
-                    actions.append(action)
-            else:
-                break
-        return actions
-
-    # TERRAN:
-
-    def terran_tech(self):
-        # marines
-        self.set_tech_goal(UnitTypeId.BARRACKS, self.th_type, UnitTypeId.BARRACKS, 4, UnitTypeId.MARINE)
-
-        # hellbats
-        # self.set_tech_goal(UnitTypeId.ARMORY, self.th_type, UnitTypeId.FACTORY, 2,
-        #                    UnitTypeId.HELLIONTANK)
-
-        # tanks #TODO: make building techlab possible (DONE)
-        self.set_tech_goal(UnitTypeId.FACTORY, self.th_type, UnitTypeId.FACTORY, 2,
-                           UnitTypeId.SIEGETANK)
-
-    async def terran_macro(self):
-        actions = []
-        actions.extend(self.morph_orbital())
-        actions.extend(self.drop_mules(save_scans=0))
-        a = self.do_repairs()
-        if a:
-            actions.append(a)
-        if not self.check_building_flag:
-            actions.extend(self.continue_building())
-            actions.extend(await self.build_addons({UnitTypeId.BARRACKS}))#build tech labs UnitTypeId.BARRACKSFLYING?
-            self.check_building_flag = 5
-        return actions
-
-    def continue_building(self):
-        actions = []
-        # FIXME: Find out why tech labs bug in this
-        buildings = self.units.structure.not_ready.exclude_type(
-            set(racial.TECHLABS).union(racial.REACTORS).union(racial.TECHREACTORS))
-        builders = self.workers.filter(lambda w: w.is_constructing_scv)
-        # for b in builders:
-        #     print(f"{b.orders}")
-        # example:
-        # [UnitOrder(AbilityData(name=CommandCenter), x: 58.5 y: 149.5 , 0.0)]
-        # TODO: maybe this can be optimized by checking if any building scv has order to build specific building
-        #  this seems to be fine for now
-        available = self.workers.collecting
-        for building in buildings:
-            if available.exists and not builders.closer_than(4, building): #5 for cc are big
-                a = available.random_group_of(int(max(available.amount/4, 1))).prefer_close_to(building)
-                ab = a[0](AbilityId.SMART, building)
-                if ab:
-                    actions.append(ab)
-        return actions
-
-    # make orbitals and drop mules (from mass_reaper.py)
-    # morph commandcenter to orbitalcommand
-    def morph_orbital(self):
-        actions = []
-        if self.units(UnitTypeId.BARRACKS).ready.exists and self.can_afford(UnitTypeId.ORBITALCOMMAND):  # check if orbital is affordable
-            for cc in self.units(UnitTypeId.COMMANDCENTER).idle:  # .idle filters idle command centers
-                actions.append(cc(AbilityId.UPGRADETOORBITAL_ORBITALCOMMAND))
-
-        return actions
-
-    def drop_mules(self, mf=None, save_scans=1):
-        #TODO: make possible to save more than 1 scan per oc (exact amounts)
-        actions = []
-        if not mf:
-            for oc in self.units(UnitTypeId.ORBITALCOMMAND).filter(lambda x: x.energy >= 50):
-                if save_scans:
-                    save_scans -= 1
-                    if oc.energy < 100:
-                        continue
-                mfs = self.state.mineral_field.closer_than(10, oc)
-                if mfs:
-                    mf = max(mfs, key=lambda x: x.mineral_contents)
-                    actions.append(oc(AbilityId.CALLDOWNMULE_CALLDOWNMULE, mf))
-        else:
-            for oc in self.units(UnitTypeId.ORBITALCOMMAND).filter(lambda x: x.energy >= 50):
-                if save_scans:
-                    save_scans -= 1
-                    if oc.energy < 100:
-                        continue
-                actions.append(oc(AbilityId.CALLDOWNMULE_CALLDOWNMULE, mf))
-
-        return actions
-
-    def do_repairs(self, scv=None, target=None, no_checks=False):
-
-        if (self.repair_flag or self.workers.amount < 8) and not no_checks:  # dont repair if more income is needed
-            return
-        # print("in do_repairs")
-        if not scv:
-            scvs = self.workers.filter(lambda w: not w.is_constructing_scv)
-            if scvs.amount > 0:
-                scv = scvs.random
-            # print(scv)
-            else:
-                return
-        if not target:
-            targets = self.units.ready.tags_not_in({scv, }).closer_than(10, scv)  # hard limit of 10 might be bad in some cases
-            if targets.amount > 0:
-                targets = check_if_mechanical(targets).filter(lambda u: u.health_percentage < 1)
-                if targets.amount > 0:
-                    target = targets[0]
-                    # print(target.health)
-
-        if target and scv:
-            # autocast not available atm
-            # print(f"doing some repairs")
-            self.repair_flag = 1
-            return scv.repair(target)
-        else:
-            self.repair_flag = 0.34
-
-    async def build_addon(self, building, reactor=True, location=None):
-        action = None
-        if not location:
-            if not building.is_flying:
-                # print("not flying")
-                can_place = await self.can_place_addon(building)
-                if can_place:
-                    if reactor:
-                        action = building(racial.BUILD_ADDONS[1])
-                    else:
-                        action = building(racial.BUILD_ADDONS[0])
-                else:
-                    building(AbilityId.LIFT)
-            # else:  #not working
-            #     print("flying")
-            #     if reactor:
-            #         action = building(racial.BUILD_ADDONS[1])
-            #     else:
-            #         action = building(racial.BUILD_ADDONS[0])
-        # else: # to be implemented: (lift off, place addon to specified location - must be done in different steps)
-
-        return action
-
-    async def can_place_addon(self, building):
-        addon_offset = position_imported.Point2((2, 0))
-        can_place = await self.can_place(UnitTypeId.SUPPLYDEPOT, building.position.offset(addon_offset))
-        if can_place:
-            return True
-        else:
-            return False
-
-    async def build_addons(self, type_id, reactor=True, max_amount=0):
-        # buildings = self.units.structure.of_type(type_id).not_flying.noqueue
-        buildings = self.units.structure.of_type(type_id).noqueue.filter(lambda st: st.add_on_tag == 0)
-        actions = []
-        count = 0
-        if buildings.exists:
-            for b in buildings:
-                a = await self.build_addon(b, reactor)
-                if a:
-                    actions.append(a)
-                    count += 1
-                    if count >= max_amount:
-                        break
-        return actions
-
-    # ZERG:
-    # make queens and inject larvae
-
-    def zerg_tech_initial(self):
-        # lings
-        self.set_tech_goal(UnitTypeId.SPAWNINGPOOL, self.th_type, None, 2,
-                           UnitTypeId.ZERGLING)
-
-        # banelings
-        if self.enemy_race is not Race.Protoss:
-            self.set_tech_goal(UnitTypeId.BANELINGNEST, self.th_type, None, 2,
-                               UnitTypeId.BANELING)
-
-        # roaches
-        self.set_tech_goal(UnitTypeId.ROACHWARREN, self.th_type, None, 1,
-                           UnitTypeId.ROACH)
-
-        # hydras
-        if self.enemy_race is not Race.Zerg:
-            self.set_tech_goal(UnitTypeId.HYDRALISKDEN, self.th_type, None, 1,
-                               UnitTypeId.HYDRALISK)
-
-        # lurkers
-        # self.set_tech_goal(UnitTypeId.LURKERDENMP, self.th_type, None, 1,
-        #                    UnitTypeId.LURKERMP)
-
-    def zerg_tech_mid(self):
-        if UnitTypeId.HYDRALISKDEN not in self.tech_goals:
-            # print("adding hydraden")
-            self.set_tech_goal(UnitTypeId.HYDRALISKDEN, self.th_type, None, 1,
-                               UnitTypeId.HYDRALISK)
-
-        # lurkers
-        if UnitTypeId.LURKERDENMP not in self.tech_goals:
-            # print("adding lurkerden")
-            self.set_tech_goal(UnitTypeId.LURKERDENMP, self.th_type, None, 1, UnitTypeId.LURKERMP)
-
-    def zerg_macro(self):
-        actions = []
-        actions.extend(self.queens_spawn())
-        actions.extend(self.queens_inject())
-        if self.get_time_in_seconds() % 6 and self.minerals > 400 and self.vespene > 250 \
-                and self.units.of_type(UnitTypeId.OVERSEER).amount + \
-                self.already_pending(UnitTypeId.OVERSEER, all_units=True) < 2:
-            a = self.morph_overseer()
-            if a:
-                actions.append(a)
-
-        if self.race is Race.Zerg:
-            if self.supply_used > 120 or (self.enemy_race is Race.Zerg and self.supply_used > 170):
-                self.zerg_tech_mid()
-
-        return actions
-
-    #following ones adopted (and modified) from hydralisk_push.py
-
-    def queen_spawn(self, townhall):
-        if self.units(UnitTypeId.SPAWNINGPOOL).ready.exists:
-            close_queens = self.units.of_type(UnitTypeId.QUEEN).closer_than(8, townhall)
-            if close_queens.amount < 1 and townhall.is_ready and townhall.noqueue: #no queens nearby
-                if self.can_afford(UnitTypeId.QUEEN):
-                    return townhall.train(UnitTypeId.QUEEN)
-
-    def queens_spawn(self, townhalls=None):
-        actions = []
-        if not townhalls:
-            townhalls = self.townhalls.ready
-        for th in townhalls:
-            action = self.queen_spawn(th)
-            if action:
-                actions.append(action)
-
-        return actions
-
-    def queen_inject(self, queen, townhall):
-        # abilities = await self.get_available_abilities(queen)
-        if queen.energy >= 25:  # inject cost is 25
-            return queen(AbilityId.EFFECT_INJECTLARVA, townhall)
-
-    def queens_inject(self, queens=None, townhalls=None, stacking=False):
-        actions = []
-        if not queens:
-            queens = self.units.of_type(UnitTypeId.QUEEN)
-        if not townhalls:
-            townhalls = self.townhalls.ready
-        for queen in queens:
-            if queen.energy >= 25:  #lambda x: x.energy >= 50
-                ths = townhalls.ready.closer_than(8, queen)
-                if not stacking: # don't stack larva injects
-                    ths = ths.filter(lambda t: not t.has_buff(BuffId.QUEENSPAWNLARVATIMER))
-                    # inject not needed if spawning larva already
-                if ths.exists:
-                    action = self.queen_inject(queen, ths.closest_to(queen.position))
-                    if action:
-                        actions.append(action)
-        return actions
-
-    def morph_overseer(self, overlord=None):
-        if overlord:
-            return self.morph_unit(overlord)
-        if self.townhalls.of_type({UnitTypeId.LAIR, UnitTypeId.HIVE}).amount > 0:
-            ovls = self.units.of_type(UnitTypeId.OVERLORD)
-            if ovls.amount > 0:
-                # print(f"trying to create overseer")
-                return self.morph_unit(ovls.random)
 
 def ability_in_orders_for_any_unit(ability, units):
     for u in units:
@@ -1942,6 +1622,6 @@ def uniques_by_type_id(unit_list):
 def check_if_mechanical(unit_list):
 
     is_mech = unit_list.structure
-    is_mech.extend(unit_list.not_structure.of_type(MECHANICALS))
+    is_mech.extend(unit_list.not_structure.of_type(racial.MECHANICALS))
     return is_mech
 
