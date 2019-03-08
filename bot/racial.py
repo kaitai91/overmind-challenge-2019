@@ -31,10 +31,20 @@ STARPORT_UNITS = {"Viking": UnitTypeId.VIKINGFIGHTER, "Medivac": UnitTypeId.MEDI
                   "Banshee": UnitTypeId.BANSHEE, "Battlecruiser": UnitTypeId.BATTLECRUISER,
                   "Liberator": UnitTypeId.LIBERATOR}
 
+MECHANICALS = [UnitTypeId.SCV, ]
+MECHANICALS.extend(list(STARPORT_UNITS.values())+list(FACTORY_UNITS.values()))
+
 # techlab, reactor
 BUILD_ADDONS = [AbilityId.BUILD_TECHLAB, AbilityId.BUILD_REACTOR]
-REACTORS = {UnitTypeId.BARRACKSREACTOR, UnitTypeId.FACTORYREACTOR, UnitTypeId.STARPORTREACTOR}
-TECH_LABS = {UnitTypeId.BARRACKSTECHLAB, UnitTypeId.FACTORYTECHLAB, UnitTypeId.STARPORTTECHLAB}
+REACTORS = {UnitTypeId.BARRACKSREACTOR, UnitTypeId.FACTORYREACTOR,
+            UnitTypeId.STARPORTREACTOR, UnitTypeId.REACTOR}
+TECHLABS = {UnitTypeId.BARRACKSTECHLAB, UnitTypeId.FACTORYTECHLAB,
+            UnitTypeId.STARPORTTECHLAB, UnitTypeId.TECHLAB}
+TECHREACTORS = {UnitTypeId.TECHREACTOR, UnitTypeId.FACTORYTECHLAB,
+                UnitTypeId.STARPORTTECHREACTOR, UnitTypeId.TECHREACTOR}
+NEEDS_TECHLAB = {UnitTypeId.MARAUDER, UnitTypeId.GHOST,
+                 UnitTypeId.SIEGETANK, UnitTypeId.THOR, UnitTypeId.CYCLONE,
+                 UnitTypeId.RAVEN, UnitTypeId.BANSHEE, UnitTypeId.BATTLECRUISER}
 
 HATCHERY_UNITS = {"Larva": UnitTypeId.LARVA, "Queen": UnitTypeId.QUEEN}
 LARVA_UNITS = {"Drone": UnitTypeId.DRONE, "Overlord": UnitTypeId.OVERLORD, "Mutalisk": UnitTypeId.MUTALISK,
@@ -49,12 +59,13 @@ MORPH_BUILDINGS = {UnitTypeId.HIVE: UnitTypeId.LAIR, UnitTypeId.LAIR: UnitTypeId
                    UnitTypeId.GREATERSPIRE: UnitTypeId.SPIRE}
 
 MORPH = {
-    #protoss
+    # protoss
     UnitTypeId.DARKTEMPLAR: AbilityId.ARCHON_WARP_TARGET, UnitTypeId.HIGHTEMPLAR: AbilityId.ARCHON_WARP_TARGET,
 
-    #terran
+    # terran
+    UnitTypeId.COMMANDCENTER: AbilityId.UPGRADETOORBITAL_ORBITALCOMMAND,
 
-    #zerg
+    # zerg
     UnitTypeId.HATCHERY: AbilityId.UPGRADETOLAIR_LAIR, UnitTypeId.LAIR: AbilityId.UPGRADETOHIVE_HIVE,
     UnitTypeId.SPIRE: AbilityId.UPGRADETOGREATERSPIRE_GREATERSPIRE,
 
