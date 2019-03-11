@@ -16,8 +16,11 @@ class ProtossMacroBot(Race_macro):
     def __init__(self, controller):
         self.controller = controller
 
-    def train_unit(self, goal, unit):
-        pass
+    async def train_unit(self, goal, unit):
+        controller = self.controller
+        facility = controller.tech_goals[goal]["prod"]
+        action = controller.train_units(facility, unit)
+        return action
 
     async def general_macro(self):
         controller = self.controller

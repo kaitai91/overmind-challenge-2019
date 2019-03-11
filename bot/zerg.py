@@ -11,12 +11,18 @@ from sc2 import position as position_imported
 import bot.racial as racial
 from bot.race_interface import Race_macro
 
+
 class ZergMacroBot(Race_macro):
     def __init__(self, controller):
         self.controller = controller
 
-    def train_unit(self, goal, unit):
-        pass
+    async def train_unit(self, goal, unit):
+        controller = self.controller
+
+        if unit in racial.MORPH_UNITS:
+            unit = racial.MORPH_UNITS[unit]
+        action = controller.train_units(controller.th_type, unit)
+        return action
 
     async def general_macro(self):
         controller = self.controller
@@ -26,15 +32,15 @@ class ZergMacroBot(Race_macro):
         if controller.get_time_in_seconds() % 6 and controller.minerals > 400 and controller.vespene > 250 \
                 and controller.units.of_type(UnitTypeId.OVERSEER).amount + \
                 controller.already_pending(UnitTypeId.OVERSEER, all_units=True) < 2:
-            a = controller.morph_overseer()
+            a = self.morph_overseer()
             if a:
                 actions.append(a)
 
         if controller.supply_used > 120 or (controller.enemy_race is Race.Zerg and controller.supply_used > 170):
-            controller.zerg_tech_mid()
+            self.mid_tech()
 
         if \
-                controller.enemy_race is Race.Zerg and \
+                UnitTypeId.BANELINGNEST in controller.tech_goals and \
                 UnitTypeId.SPAWNINGPOOL in controller.tech_goals and \
                 controller.supply_used > 62:
 
@@ -45,22 +51,18 @@ class ZergMacroBot(Race_macro):
     def early_tech(self):
         controller = self.controller
         # lings
-        controller.set_tech_goal(UnitTypeId.SPAWNINGPOOL, controller.th_type, None, 2,
-                           UnitTypeId.ZERGLING)
+        controller.set_tech_goal(UnitTypeId.SPAWNINGPOOL, controller.th_type, None, 2, UnitTypeId.ZERGLING)
 
         # banelings
         if controller.enemy_race is not Race.Protoss:
-            controller.set_tech_goal(UnitTypeId.BANELINGNEST, controller.th_type, None, 2,
-                               UnitTypeId.BANELING)
+            controller.set_tech_goal(UnitTypeId.BANELINGNEST, controller.th_type, None, 2, UnitTypeId.BANELING)
 
         # roaches
-        controller.set_tech_goal(UnitTypeId.ROACHWARREN, controller.th_type, None, 1,
-                           UnitTypeId.ROACH)
+        controller.set_tech_goal(UnitTypeId.ROACHWARREN, controller.th_type, None, 1, UnitTypeId.ROACH)
 
         # hydras
         if controller.enemy_race is not Race.Zerg:
-            controller.set_tech_goal(UnitTypeId.HYDRALISKDEN, controller.th_type, None, 1,
-                               UnitTypeId.HYDRALISK)
+            controller.set_tech_goal(UnitTypeId.HYDRALISKDEN, controller.th_type, None, 1, UnitTypeId.HYDRALISK)
 
     def mid_tech(self):
         controller = self.controller
@@ -68,8 +70,7 @@ class ZergMacroBot(Race_macro):
         # hydras
         if UnitTypeId.HYDRALISKDEN not in controller.tech_goals:
             # print("adding hydraden")
-            controller.set_tech_goal(UnitTypeId.HYDRALISKDEN, controller.th_type, None, 1,
-                               UnitTypeId.HYDRALISK)
+            controller.set_tech_goal(UnitTypeId.HYDRALISKDEN, controller.th_type, None, 1, UnitTypeId.HYDRALISK)
 
         # lurkers
         if UnitTypeId.LURKERDENMP not in controller.tech_goals:
