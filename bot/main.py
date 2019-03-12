@@ -235,7 +235,7 @@ class MyBot(sc2.BotAI):
             # return
 
         if not self.racial_macro_flag:
-            actions.extend(await self.macro_boost(self.race))
+            actions.extend(await self.macro_boost())
             self.racial_macro_flag = .97 #arbitrary cooldown
 
         if self.minerals > 150 and (self.vespene / (self.minerals+1)) <= 0.6: #vespene count less than 60% of minerals
@@ -356,7 +356,7 @@ class MyBot(sc2.BotAI):
 
         if not self.tech_switch and self.supply_used > 21:
             self.tech_switch = 1
-            self.set_racial_tech_goals(self.race)
+            self.set_tech_goals()
 
             await self.chat_send(f"(party) It's party time! (party)")
 
@@ -488,7 +488,7 @@ class MyBot(sc2.BotAI):
         else:
             buildings = buildings.noqueue
         if max_amount:
-            buildings = buildings.random_group_of(max_amount)
+            buildings = buildings.random_group_of(min(max_amount, buildings.amount))
         for prod_b in buildings:
             if self.can_afford(unit_type):
                 if self.race == Race.Zerg:
@@ -504,22 +504,22 @@ class MyBot(sc2.BotAI):
             return target_unit(racial.MORPH2[target_unit.type_id])
         return target_unit(racial.MORPH[target_unit.type_id])
 
-    def morph_units(self, target_units):
+    def morph_units(self, target_units, alt=False):
         actions = []
 
         for unit in target_units:
-            action = self.morph_unit(unit)
+            action = self.morph_unit(unit, alt)
             if action:
                 actions.append(action)
         return actions
 
-    def morph_by_id(self, type_id, max_amount=0): #max 0 --> all
+    def morph_by_id(self, type_id, max_amount=0, alt=False): #max 0 --> all
         targets = self.units.of_type(type_id).ready
         if targets.amount < 1:
             return []
         if max_amount:
             targets.random_group_of(min(targets.amount, max_amount))
-        return self.morph_units(targets)
+        return self.morph_units(targets, alt)
 
     async def build_supply(self):
         if self.supply_cap == 200:
@@ -1073,7 +1073,9 @@ class MyBot(sc2.BotAI):
             target = tags[tg]["target"]
             if unit.distance_to(target) >= 25 and close_enemies < 2:
                 actions.append(unit.move(target))
-            elif (unit.distance_to(target) >= 2 and tags[tg]["retreat"] < 5): #or len(close_enemies) > 0:
+            elif (unit.distance_to(target) >= 5) and (tags[tg]["retreat"] < 5):
+                actions.append(unit.move(target))
+            elif unit.distance_to(target) >= 2 and not self.units.structure.closer_than(2.1, target) and tags[tg]["retreat"] < 5:
                 actions.append(unit.attack(target))
             else:
                 tb_removed.append(tg)
@@ -1262,29 +1264,29 @@ class MyBot(sc2.BotAI):
 
             prod_goal = self.tech_goals[tech_goal]["prod"]
             # start unit production
-            #TODO: remove??
-            goal_unit = self.tech_goals[tech_goal]["unit"]
-            if goal_unit in racial.MORPH_UNITS:
-                goal_unit_prod = racial.MORPH_UNITS[goal_unit]
-                # print(goal_unit)
-                # print(goal_unit_prod)
-            else:
-                goal_unit_prod = goal_unit
-            # if self.units.of_type(prod_goal).ready.amount > 0:
-            #     # start producing units
-            #     # for building in self.units.of_type(self.tech_goals[tech_goal]["prod"]).ready:
-            #     #     #if building in racial.PROD_B_TYPES[self.race]:  # this check shouldn't be needed
-            #     #     await self.train_units(building, goal_unit)
+            # # TODO: remove??
+            # goal_unit = self.tech_goals[tech_goal]["unit"]
+            # if goal_unit in racial.MORPH_UNITS:
+            #     goal_unit_prod = racial.MORPH_UNITS[goal_unit]
+            #     # print(goal_unit)
+            #     # print(goal_unit_prod)
+            # else:
+            #     goal_unit_prod = goal_unit
+            # # if self.units.of_type(prod_goal).ready.amount > 0:
+            # #     # start producing units
+            # #     # for building in self.units.of_type(self.tech_goals[tech_goal]["prod"]).ready:
+            # #     #     #if building in racial.PROD_B_TYPES[self.race]:  # this check shouldn't be needed
+            # #     #     await self.train_units(building, goal_unit)
+            # #
+            # #     if prod_goal in racial.PROD_B_TYPES[self.race]:  # non-zerg
+            # #         actions.extend(self.train_units(prod_goal, goal_unit_prod))
+            # #     else:  # zerg
+            # #         actions.extend(self.train_units(self.th_type, goal_unit_prod))
             #
-            #     if prod_goal in racial.PROD_B_TYPES[self.race]:  # non-zerg
-            #         actions.extend(self.train_units(prod_goal, goal_unit_prod))
-            #     else:  # zerg
-            #         actions.extend(self.train_units(self.th_type, goal_unit_prod))
-
-            #morph units into goal units if needed
-            #TODO: do it in different part
-            if goal_unit is not goal_unit_prod:
-                actions.extend(self.morph_by_id(goal_unit_prod, 1))
+            # #morph units into goal units if needed
+            # #TODO: do it in different part
+            # if goal_unit is not goal_unit_prod:
+            #     actions.extend(self.morph_by_id(goal_unit_prod, 1))
 
             # add enough production buildings
             already_building = self.already_pending(prod_goal)
@@ -1412,80 +1414,9 @@ class MyBot(sc2.BotAI):
             return 0
 
 
-    async def get_tech(self, tech_goal):
-        """
-        Tries to progress towards specified tech
-
-        :return:    0: unable to progress towards tech
-                    1: progressing towards tech
-                    2: tech available
-        """
-
-        ready_buildings = self.units.structure.ready
-        for b in ready_buildings:
-            if tech_goal == b.type_id:
-                return 2
-            if b.tech_alias:
-                if tech_goal in b.tech_alias:
-                    return 2
-
-        not_ready_buildings = self.units.structure.not_ready
-        #print(f"ready: {ready_buildings}")
-        #print(f"not ready: {not_ready_buildings}")
-        for b in not_ready_buildings:
-            if tech_goal == b.type_id:
-                return 1
-            if b.tech_alias:
-                if tech_goal in b.tech_alias:
-                    return 1
-
-        building_types = set()
-        for b in ready_buildings:
-            building_types.add(b.type_id)
-            if b.tech_alias:
-                building_types.union(b.tech_alias)
-
-        unfinished_types = set()
-        for b in not_ready_buildings:
-            unfinished_types.add(b.type_id)
-            if b.tech_alias:
-                unfinished_types.union(b.tech_alias)
-
-        available_tech = racial.get_available_buildings(self.race, building_types)
-        tech_path = racial.get_tech_path_needed(self.race, tech_goal)
-        not_having = (set(available_tech).intersection(tech_path)-building_types)-unfinished_types
-        # print(not_having)
-        if tech_goal not in not_having:
-            for b_type in not_having:
-                if b_type not in racial.MORPH_BUILDINGS:
-                    await self.build(b_type, near=self.townhalls.random)
-                else:
-                    morph_this = self.units.structure.of_type(racial.MORPH_BUILDINGS[b_type]).ready.random
-                    if morph_this:
-                        await self.do(morph_this.build(b_type))
-                        # print(f"morphing{morph_this} into {b_type}")
-                        # print(f"{morph_this.build_progress}")
-                    else:
-                        break
-            else:
-                return 1  # all buildings built, progressing towards tech
-            return 0  # not sure if progress has been made
-        else:
-            if tech_goal in racial.PROD_B_TYPES[self.race]: #if we want to high production of units
-                for i in range(4):
-                    await self.build(tech_goal, near=self.townhalls.random)
-                else:
-                    return 1
-
-            else:
-                await self.build(tech_goal, near=self.townhalls.random)
-                return 1
-        return 0
-
     async def chat_defending_taunt(self, enemy_position, defender_amount, enemy_hp, own_hp, enemy_dps, own_dps):
         if not self.def_msg_flag:
-            if (len(self.def_force_tags) >= defender_amount) and len(self.def_force_tags) > 0:  # and \
-                # (own_hp/max(0.1, enemy_dps) > enemy_hp/max(0.1, own_dps) or self.townhalls.amount <= 2):
+            if (len(self.def_force_tags) >= defender_amount) and len(self.def_force_tags) > 0:
                 await self.chat_send(f"You attack at: {enemy_position}")
                 await self.chat_send(f"All Hands On The Deck (flex) (flex)")
             else:  # defend with all
@@ -1496,8 +1427,6 @@ class MyBot(sc2.BotAI):
 
     async def chat_retreating(self, attack_position, enemy_hp, enemy_dps):
         if len(self.def_force_tags) > 0:
-            for def_tag in self.def_force_tags:
-                self.def_force_tags[def_tag]["retreating"] = 5
             if not self.def_msg_flag:
                 await self.chat_send(f"Your attack is too much atm - Retreating")
                 self.def_msg_flag = 8
@@ -1508,14 +1437,9 @@ class MyBot(sc2.BotAI):
 
     # TECH GOALS PER RACE:
 
-    def set_racial_tech_goals(self, race):
+    def set_tech_goals(self):
         # some tech
-        if race == Race.Protoss:
-            self.protoss_tech()
-        if race == Race.Terran:
-            self.terran_tech()
-        if race == Race.Zerg:
-            self.zerg_tech_initial()
+        self.macro_bot.early_tech()
 
     def set_air_tech_goal(self):
         #and finally air tech
@@ -1531,35 +1455,13 @@ class MyBot(sc2.BotAI):
         for goal in self.tech_goals:
             if self.units.structure.ready.of_type(goal).amount > 0: #if we have building ready
                 unit = self.tech_goals[goal]["unit"]
-                if self.race is Race.Zerg:
-                    if unit in racial.MORPH_UNITS:
-                        unit = racial.MORPH_UNITS[unit]
-                    action = self.train_units(self.th_type, unit)
-
-                elif self.race is Race.Terran:
-                    facility = self.tech_goals[goal]["prod"]
-                    if unit not in racial.NEEDS_TECHLAB:
-                        action = self.train_units(facility, unit)
-                    else:
-                        buildings = self.units.structure.of_type(facility).noqueue.filter(lambda st: st.add_on_tag != 0)
-                        if buildings.exists:  # noqueue makes sure the addon is also finished
-                            action = []
-                            for b in buildings:
-                                a = b.train(unit)
-                                if a:
-                                    action.append(a)
-                        else:
-                            action = await self.build_addons(facility, False)
-
-                else:
-                    facility = self.tech_goals[goal]["prod"]
-                    action = self.train_units(facility, unit)
+                action = await self.macro_bot.train_unit(goal, unit)
                 if action:
                     actions.extend(action)
         # print(actions)
         return actions
 
-    async def macro_boost(self, race):
+    async def macro_boost(self):
 
         actions = []
         actions.extend(await self.macro_bot.general_macro())
@@ -1575,9 +1477,6 @@ class MyBot(sc2.BotAI):
                 elif self.tech_goals[goal]["count"] < 3:
                     self.tech_goals[goal]["count"] += 1
 
-        # if self.enemy_race is Race.Zerg and UnitTypeId.SPAWNINGPOOL in self.tech_goals and self.supply_used > 62:
-        #     self.tech_goals.pop(UnitTypeId.SPAWNINGPOOL)
-
         if self.tech_switch and (self.minerals > 480 or self.supply_used < 60 or self.known_enemy_units.amount >= 3):
             actions.extend(await self.macro_train_units())
 
@@ -1590,6 +1489,15 @@ def ability_in_orders_for_any_unit(ability, units):
                 return True
     return False
 
+def ability_in_orders_for_all_units(ability, units):
+    for u in units:
+        if not u.noqueue:
+            if u.orders[0].ability.id is ability:
+                continue
+        break
+    else:
+        return True
+    return False
 
 def check_building_type_similarity(b_type, buildings):
     for b in buildings:
@@ -1604,7 +1512,7 @@ def compare_building_type(building_type, building):
     if building_type == building.type_id:
         return True
     if building.unit_alias:
-        if building_type in building.tech_alias:
+        if building_type in building.unit_alias:
             return True
     if building.tech_alias:
         if building_type in building.tech_alias:
