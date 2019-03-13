@@ -229,16 +229,15 @@ class MyBot(sc2.BotAI):
 
         if self.clock >= 60 and not self.w_dist_flag:
             self.w_dist_flag = 0.8
-            # self.d_task = True
-            await self.distribute_workers()
-            # self.d_task = False
-            # return
+            # dont saturate gas if the gas count is high enough
+            skip_gas = self.vespene*1.5 > self.minerals
+            await self.distribute_workers(skip_gas)
 
         if not self.racial_macro_flag:
             actions.extend(await self.macro_boost())
             self.racial_macro_flag = .97 #arbitrary cooldown
 
-        if self.minerals > 150 and (self.vespene / (self.minerals+1)) <= 0.6: #vespene count less than 60% of minerals
+        if (self.minerals > 150) and ((self.vespene / (self.minerals+1)) <= 0.6): #vespene count less than 60% of minerals
             #following snippet adpoted from cyclone_push.py
             for a in self.units(self.gas_type):
                 if a.assigned_harvesters < a.ideal_harvesters:
@@ -247,7 +246,7 @@ class MyBot(sc2.BotAI):
                         actions.append(w.random.gather(a))
 
             #specified refinery counts for certain amount of workers
-            if (self.vespene / (self.minerals+1)) <= 0.5 and self.minerals >= 800:
+            if (self.minerals >= 800) and ((self.vespene / (self.minerals+1)) <= 0.5):
                 await self.check_and_build_gas() #add extra gas if gas-starving
 
 
@@ -396,6 +395,74 @@ class MyBot(sc2.BotAI):
 
         await self.do_actions(actions)
 
+    #copied and modified from bot_ai
+    async def distribute_workers(self, skip_gas=False):
+        """
+        Distributes workers across all the bases taken.
+        WARNING: This is quite slow when there are lots of workers or multiple bases.
+        """
+
+        # TODO:
+        # OPTIMIZE: Assign idle workers smarter
+        # OPTIMIZE: Never use same worker mutltiple times
+        owned_expansions = self.owned_expansions
+        worker_pool = []
+        actions = []
+
+        for idle_worker in self.workers.idle:
+            mf = self.state.mineral_field.closest_to(idle_worker)
+            actions.append(idle_worker.gather(mf))
+
+        for location, townhall in owned_expansions.items():
+            workers = self.workers.closer_than(20, location)
+            actual = townhall.assigned_harvesters
+            ideal = townhall.ideal_harvesters
+            excess = actual - ideal
+            if actual > ideal:
+                worker_pool.extend(workers.random_group_of(min(excess, len(workers))))
+                continue
+        for g in self.geysers:
+            workers = self.workers.closer_than(5, g)
+            actual = g.assigned_harvesters
+            ideal = g.ideal_harvesters
+            excess = actual - ideal
+            if actual > ideal:
+                worker_pool.extend(workers.random_group_of(min(excess, len(workers))))
+                continue
+
+        if not skip_gas:
+            for g in self.geysers:
+                actual = g.assigned_harvesters
+                ideal = g.ideal_harvesters
+                deficit = ideal - actual
+
+                for _ in range(deficit):
+                    if worker_pool:
+                        w = worker_pool.pop()
+                        if len(w.orders) == 1 and w.orders[0].ability.id is AbilityId.HARVEST_RETURN:
+                            actions.append(w.move(g))
+                            actions.append(w.return_resource(queue=True))
+                        else:
+                            actions.append(w.gather(g))
+
+        for location, townhall in owned_expansions.items():
+            actual = townhall.assigned_harvesters
+            ideal = townhall.ideal_harvesters
+
+            deficit = ideal - actual
+            for x in range(0, deficit):
+                if worker_pool:
+                    w = worker_pool.pop()
+                    mf = self.state.mineral_field.closest_to(townhall)
+                    if len(w.orders) == 1 and w.orders[0].ability.id is AbilityId.HARVEST_RETURN:
+                        actions.append(w.move(townhall))
+                        actions.append(w.return_resource(queue=True))
+                        actions.append(w.gather(mf, queue=True))
+                    else:
+                        actions.append(w.gather(mf))
+
+        await self.do_actions(actions)
+
     async def expand(self):
         # expand
         if (self.units(self.th_type).amount < 8 or self.workers.amount > 75) and self.can_afford(self.th_type):
@@ -500,7 +567,7 @@ class MyBot(sc2.BotAI):
 
     def morph_unit(self, target_unit, alt=False):
         #so far alt is used only for overlord transport morph - not tested
-        if alt:
+        if alt and target_unit.type_id == UnitTypeId.OVERLORD:  # prevent crashing if trying alt with other units
             return target_unit(racial.MORPH2[target_unit.type_id])
         return target_unit(racial.MORPH[target_unit.type_id])
 
@@ -552,7 +619,7 @@ class MyBot(sc2.BotAI):
     def geysers_needed(self):
         w_amount = self.workers.amount
         if self.race is not Race.Zerg:
-            if w_amount >= 66:
+            if w_amount >= 72:
                 geyser_amount = (int(self.units.of_type(self.gas_type).amount) + 1)
             elif w_amount >= 50:
                 geyser_amount = min(len(self.owned_expansions) * 2, 5)
@@ -584,7 +651,7 @@ class MyBot(sc2.BotAI):
 
         if self.townhalls.amount > 0:
             if geyser_amount - self.geysers.amount - self.already_pending(self.gas_type) > 0:
-                return geyser_amount
+                return geyser_amount - self.geysers.amount - self.already_pending(self.gas_type)
         return 0
 
     async def build_gas(self, max_amount=3):
@@ -1477,7 +1544,7 @@ class MyBot(sc2.BotAI):
                 elif self.tech_goals[goal]["count"] < 3:
                     self.tech_goals[goal]["count"] += 1
 
-        if self.tech_switch and (self.minerals > 480 or self.supply_used < 60 or self.known_enemy_units.amount >= 3):
+        if self.tech_switch and (self.minerals > 480 or self.supply_used < 60): #or self.known_enemy_units.amount >= 10):
             actions.extend(await self.macro_train_units())
 
         return actions
