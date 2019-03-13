@@ -18,10 +18,13 @@ class ZergMacroBot(Race_macro):
 
     async def train_unit(self, goal, unit):
         controller = self.controller
-
+        fl = False
         if unit in racial.MORPH_UNITS:
             unit = racial.MORPH_UNITS[unit]
-        action = controller.train_units(controller.th_type, unit)
+            fl = True
+        action = controller.train_units(controller.th_type, unit, 1)
+        if fl:
+            action.extend(controller.morph_by_id(unit, 1))
         return action
 
     async def general_macro(self):
@@ -36,7 +39,7 @@ class ZergMacroBot(Race_macro):
             if a:
                 actions.append(a)
 
-        if controller.supply_used > 120 or (controller.enemy_race is Race.Zerg and controller.supply_used > 170):
+        if (controller.supply_used > 120 and controller.enemy_race is not Race.Zerg) or (controller.supply_used > 170):
             self.mid_tech()
 
         if \
@@ -45,6 +48,8 @@ class ZergMacroBot(Race_macro):
                 controller.supply_used > 62:
 
             controller.tech_goals.pop(UnitTypeId.SPAWNINGPOOL)
+            if controller.enemy_race == Race.Zerg:
+                controller.tech_goals.pop(UnitTypeId.BANELINGNEST)
 
         return actions
 
