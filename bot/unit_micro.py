@@ -22,7 +22,7 @@ class MicroBot:
             else:
                 return unit(AbilityId.BURROWDOWN)
         else:
-            if unit.is_burrowed:
+            if unit.type_id == UnitTypeId.LURKERMPBURROWED:
                 return unit(AbilityId.BURROWUP)
 
     @staticmethod
@@ -76,5 +76,5 @@ MICRO_BY_TYPE = {
     UnitTypeId.HELLION: MicroBot.hel_lion_bat_micro, UnitTypeId.HELLIONTANK: MicroBot.hel_lion_bat_micro,
 
     #zerg
-    UnitTypeId.LURKERMP: MicroBot.lurker_micro,
+    UnitTypeId.LURKERMP: MicroBot.lurker_micro, UnitTypeId.LURKERMPBURROWED: MicroBot.lurker_micro,
 }
