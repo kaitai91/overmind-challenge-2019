@@ -2,9 +2,9 @@
 # Racial macro management module
 # (c) kaitai
 # Includes Townhalls, Production Buildings, Workers, Tech tree, and more
-# TODO: Add unit production
 # TODO: think whether text strings are sensible and maybe remove them
 # TODO: more consistent way of using variables vs functions
+# TODO: add upgrades (attack, armor, speed, stim...)
 
 from sc2 import Race
 from sc2.ids.unit_typeid import *
@@ -31,6 +31,21 @@ STARPORT_UNITS = {"Viking": UnitTypeId.VIKINGFIGHTER, "Medivac": UnitTypeId.MEDI
                   "Banshee": UnitTypeId.BANSHEE, "Battlecruiser": UnitTypeId.BATTLECRUISER,
                   "Liberator": UnitTypeId.LIBERATOR}
 
+MECHANICALS = [UnitTypeId.SCV, ]
+MECHANICALS.extend(list(STARPORT_UNITS.values())+list(FACTORY_UNITS.values()))
+
+# techlab, reactor
+BUILD_ADDONS = [AbilityId.BUILD_TECHLAB, AbilityId.BUILD_REACTOR]
+REACTORS = {UnitTypeId.BARRACKSREACTOR, UnitTypeId.FACTORYREACTOR,
+            UnitTypeId.STARPORTREACTOR, UnitTypeId.REACTOR}
+TECHLABS = {UnitTypeId.BARRACKSTECHLAB, UnitTypeId.FACTORYTECHLAB,
+            UnitTypeId.STARPORTTECHLAB, UnitTypeId.TECHLAB}
+TECHREACTORS = {UnitTypeId.TECHREACTOR, UnitTypeId.FACTORYTECHLAB,
+                UnitTypeId.STARPORTTECHREACTOR, UnitTypeId.TECHREACTOR}
+NEEDS_TECHLAB = {UnitTypeId.MARAUDER, UnitTypeId.GHOST,
+                 UnitTypeId.SIEGETANK, UnitTypeId.THOR, UnitTypeId.CYCLONE,
+                 UnitTypeId.RAVEN, UnitTypeId.BANSHEE, UnitTypeId.BATTLECRUISER}
+
 HATCHERY_UNITS = {"Larva": UnitTypeId.LARVA, "Queen": UnitTypeId.QUEEN}
 LARVA_UNITS = {"Drone": UnitTypeId.DRONE, "Overlord": UnitTypeId.OVERLORD, "Mutalisk": UnitTypeId.MUTALISK,
                "Zergling": UnitTypeId.ZERGLING, "Infestor": UnitTypeId.INFESTOR, "Roach": UnitTypeId.ROACH,
@@ -44,11 +59,13 @@ MORPH_BUILDINGS = {UnitTypeId.HIVE: UnitTypeId.LAIR, UnitTypeId.LAIR: UnitTypeId
                    UnitTypeId.GREATERSPIRE: UnitTypeId.SPIRE}
 
 MORPH = {
-    #protoss
+    # protoss
+    UnitTypeId.DARKTEMPLAR: AbilityId.ARCHON_WARP_TARGET, UnitTypeId.HIGHTEMPLAR: AbilityId.ARCHON_WARP_TARGET,
 
-    #terran
+    # terran
+    UnitTypeId.COMMANDCENTER: AbilityId.UPGRADETOORBITAL_ORBITALCOMMAND,
 
-    #zerg
+    # zerg
     UnitTypeId.HATCHERY: AbilityId.UPGRADETOLAIR_LAIR, UnitTypeId.LAIR: AbilityId.UPGRADETOHIVE_HIVE,
     UnitTypeId.SPIRE: AbilityId.UPGRADETOGREATERSPIRE_GREATERSPIRE,
 
@@ -77,14 +94,14 @@ TRANSFORM = {
     UnitTypeId.OBSERVERSIEGEMODE: AbilityId.MORPH_OBSERVERMODE,
     UnitTypeId.WARPPRISMPHASING: AbilityId.MORPH_WARPPRISMTRANSPORTMODE,
 
-    # terran
+    # terran ##TODO: test thor
     UnitTypeId.SUPPLYDEPOT: AbilityId.MORPH_SUPPLYDEPOT_LOWER, UnitTypeId.HELLION: AbilityId.MORPH_HELLBAT,
-    UnitTypeId.SIEGETANK: AbilityId.SIEGEMODE_SIEGEMODE, UnitTypeId.LIBERATOR: AbilityId.MORPH_LIBERATORAGMODE,
-    UnitTypeId.VIKINGFIGHTER: AbilityId.MORPH_VIKINGASSAULTMODE,
+    UnitTypeId.SIEGETANK: AbilityId.SIEGEMODE_SIEGEMODE, UnitTypeId.THOR: AbilityId.MORPH_THORHIGHIMPACTMODE,
+    UnitTypeId.LIBERATOR: AbilityId.MORPH_LIBERATORAGMODE, UnitTypeId.VIKINGFIGHTER: AbilityId.MORPH_VIKINGASSAULTMODE,
 
     UnitTypeId.SUPPLYDEPOTLOWERED: AbilityId.MORPH_SUPPLYDEPOT_RAISE, UnitTypeId.HELLIONTANK: AbilityId.MORPH_HELLION,
-    UnitTypeId.SIEGETANKSIEGED: AbilityId.UNSIEGE_UNSIEGE, UnitTypeId.LIBERATORAG: AbilityId.MORPH_LIBERATORAAMODE,
-    UnitTypeId.VIKINGASSAULT: AbilityId.MORPH_VIKINGFIGHTERMODE,
+    UnitTypeId.SIEGETANKSIEGED: AbilityId.UNSIEGE_UNSIEGE, UnitTypeId.THORAP: AbilityId.MORPH_THOREXPLOSIVEMODE,
+    UnitTypeId.LIBERATORAG: AbilityId.MORPH_LIBERATORAAMODE, UnitTypeId.VIKINGASSAULT: AbilityId.MORPH_VIKINGFIGHTERMODE,
 
     # zerg
     UnitTypeId.OVERSEER: AbilityId.MORPH_OVERSIGHTMODE,
@@ -103,11 +120,7 @@ PROD_B_TYPES = \
     {Race.Protoss: {UnitTypeId.GATEWAY, UnitTypeId.WARPGATE, UnitTypeId.ROBOTICSFACILITY, UnitTypeId.STARGATE},
     Race.Terran: {UnitTypeId.BARRACKS, UnitTypeId.FACTORY, UnitTypeId.STARPORT},
     Race.Zerg: {UnitTypeId.HATCHERY, }}
-# TECH_B_TYPES = \
-#     {Race.Protoss: {UnitTypeId.NEXUS, UnitTypeId.PYLON, UnitTypeId.GATEWAY, UnitTypeId.CYBERNETICSCORE,
-#                     UnitTypeId.ROBOTICSFACILITY, UnitTypeId.STARGATE, UnitTypeId.TWILIGHTCOUNCIL },
-#     Race.Terran: {UnitTypeId.BARRACKS, UnitTypeId.FACTORY, UnitTypeId.STARPORT},
-#     Race.Zerg: {UnitTypeId.HATCHERY, }}
+
 # primary, [secondary]
 SUPPLY_UNITS = {Race.Protoss: {UnitTypeId.PYLON, UnitTypeId.NEXUS},
                 Race.Terran: {UnitTypeId.SUPPLYDEPOT, UnitTypeId.COMMANDCENTER},
@@ -119,7 +132,7 @@ AIR_TECH = \
      Race.Zerg: {UnitTypeId.SPIRE}}
 
 #
-TECH_TREE = {
+BUILDING_TECH_TREE = {
     Race.Protoss: {
         UnitTypeId.NEXUS: {
             UnitTypeId.FORGE: {
@@ -189,6 +202,109 @@ TECH_TREE = {
     },  #MORE RACES
 }
 
+##BUILDING_ABILITIES
+#protoss
+NEXUS = {UnitTypeId.NEXUS: {AbilityId.NEXUSTRAIN_PROBE, AbilityId.NEXUSTRAINMOTHERSHIP_MOTHERSHIP, AbilityId.EFFECT_CHRONOBOOSTENERGYCOST}}
+
+#terran
+
+#zerg
+
+##UNIT ABILITIES
+# TODO: test spell abilities
+SPELL1 = {
+    # protoss
+    UnitTypeId.ZEALOT: AbilityId.EFFECT_CHARGE, UnitTypeId.ADEPT: AbilityId.ADEPTPHASESHIFT_ADEPTPHASESHIFT,
+    UnitTypeId.SENTRY: AbilityId.FORCEFIELD_FORCEFIELD, UnitTypeId.STALKER: AbilityId.EFFECT_BLINK_STALKER,
+    UnitTypeId.DARKTEMPLAR: AbilityId.EFFECT_SHADOWSTRIDE, UnitTypeId.HIGHTEMPLAR: AbilityId.FEEDBACK_FEEDBACK,
+    UnitTypeId.DISRUPTOR: AbilityId.EFFECT_PURIFICATIONNOVA, UnitTypeId.VOIDRAY: AbilityId.EFFECT_VOIDRAYPRISMATICALIGNMENT,
+    UnitTypeId.PHOENIX: AbilityId.GRAVITONBEAM_GRAVITONBEAM, UnitTypeId.ORACLE: AbilityId.ORACLEREVELATION_ORACLEREVELATION,
+    UnitTypeId.MOTHERSHIP: AbilityId.EFFECT_MASSRECALL_MOTHERSHIP, UnitTypeId.SHIELDBATTERY: AbilityId.RESTORESHIELDS_RESTORESHIELDS,
+
+    # terran
+    UnitTypeId.SCV: AbilityId.EFFECT_REPAIR_SCV, UnitTypeId.MULE: AbilityId.EFFECT_REPAIR_MULE,
+    UnitTypeId.MARINE: AbilityId.EFFECT_STIM_MARINE, UnitTypeId.REAPER: AbilityId.KD8CHARGE_KD8CHARGE,
+    UnitTypeId.MARAUDER: AbilityId.EFFECT_STIM_MARAUDER, UnitTypeId.GHOST: AbilityId.TACNUKESTRIKE_NUKECALLDOWN,
+    UnitTypeId.CYCLONE: AbilityId.LOCKON_LOCKON, UnitTypeId.MEDIVAC: AbilityId.MEDIVACHEAL_HEAL,
+    UnitTypeId.RAVEN: AbilityId.RAVENBUILD_AUTOTURRET, UnitTypeId.BATTLECRUISER: AbilityId.YAMATO_YAMATOGUN,
+    UnitTypeId.BANSHEE: AbilityId.BEHAVIOR_CLOAKON_BANSHEE,
+    # UnitTypeId.COMMANDCENTER: AbilityId.LOADALL_COMMANDCENTER,
+    # UnitTypeId.PLANETARYFORTRESS: AbilityId.LOADALL_COMMANDCENTER, UnitTypeId.BUNKER: AbilityId.LOAD_BUNKER,
+
+    # zerg #nyduscanal == nydusworm?
+    UnitTypeId.BANELING: AbilityId.EXPLODE_EXPLODE, UnitTypeId.QUEEN: AbilityId.BUILD_CREEPTUMOR_QUEEN,
+    UnitTypeId.RAVAGER: AbilityId.EFFECT_CORROSIVEBILE, UnitTypeId.OVERSEER: AbilityId.SPAWNCHANGELING_SPAWNCHANGELING,
+    UnitTypeId.SWARMHOSTMP: AbilityId.SWARMHOSTSPAWNLOCUSTS_LOCUSTMP, UnitTypeId.INFESTOR: AbilityId.INFESTEDTERRANSLAYEGG_INFESTEDTERRANS,
+    UnitTypeId.VIPER: AbilityId.VIPERCONSUMESTRUCTURE_VIPERCONSUME,
+
+}
+SPELL2 = {
+    # protoss
+    UnitTypeId.SENTRY: AbilityId.GUARDIANSHIELD_GUARDIANSHIELD, UnitTypeId.HIGHTEMPLAR: AbilityId.PSISTORM_PSISTORM,
+    UnitTypeId.ORACLE: AbilityId.ORACLESTASISTRAP_ORACLEBUILDSTASISTRAP, UnitTypeId.MOTHERSHIP: AbilityId.EFFECT_TIMEWARP,
+
+    # terran
+    UnitTypeId.GHOST: AbilityId.EFFECT_GHOSTSNIPE, UnitTypeId.MEDIVAC: AbilityId.EFFECT_MEDIVACIGNITEAFTERBURNERS,
+    UnitTypeId.RAVEN: AbilityId.EFFECT_INTERFERENCEMATRIX, UnitTypeId.BATTLECRUISER: AbilityId.EFFECT_TACTICALJUMP,
+    UnitTypeId.BANSHEE: AbilityId.BEHAVIOR_CLOAKOFF_BANSHEE,
+    # UnitTypeId.COMMANDCENTER: AbilityId.UNLOADALL_COMMANDCENTER,
+    # UnitTypeId.PLANETARYFORTRESS: AbilityId.UNLOADALL_COMMANDCENTER, UnitTypeId.BUNKER: AbilityId.UNLOADALL_BUNKER,
+
+    # zerg
+    UnitTypeId.QUEEN: AbilityId.EFFECT_INJECTLARVA, UnitTypeId.OVERSEER: AbilityId.CONTAMINATE_CONTAMINATE,
+    UnitTypeId.INFESTOR: AbilityId.FUNGALGROWTH_FUNGALGROWTH, UnitTypeId.VIPER: AbilityId.EFFECT_ABDUCT,
+
+}
+SPELL3 = {
+    # protoss #TODO: different senty hallucinations (idea: sentry[UnitTypeId.Zealot: AbilityId.hallucination_zealot)
+    UnitTypeId.SENTRY: AbilityId.HALLUCINATION_PHOENIX, UnitTypeId.ORACLE: AbilityId.BEHAVIOR_PULSARBEAMON,
+
+    # terran
+    UnitTypeId.GHOST: AbilityId.EMP_EMP, UnitTypeId.MEDIVAC: AbilityId.UNLOADALLAT_MEDIVAC,
+    UnitTypeId.RAVEN: AbilityId.EFFECT_ANTIARMORMISSILE,
+
+    # zerg
+    UnitTypeId.QUEEN: AbilityId.TRANSFUSION_TRANSFUSION, UnitTypeId.INFESTOR: AbilityId.NEURALPARASITE_NEURALPARASITE,
+    UnitTypeId.VIPER: AbilityId.BLINDINGCLOUD_BLINDINGCLOUD,
+
+}
+SPELL4 = {
+    # protoss
+    UnitTypeId.ORACLE: AbilityId.BEHAVIOR_PULSARBEAMOFF,
+
+    # terran
+    UnitTypeId.GHOST: AbilityId.BEHAVIOR_CLOAKON_GHOST,
+
+    # zerg
+    UnitTypeId.VIPER: AbilityId.PARASITICBOMB_PARASITICBOMB,
+}
+SPELL5 = {
+    # protoss
+
+    # terran
+    UnitTypeId.GHOST: AbilityId.BEHAVIOR_CLOAKOFF_GHOST,
+
+    # zerg
+}
+
+SPELL_LIST = [SPELL1, SPELL2, SPELL3, SPELL4, SPELL5]
+
+def get_spells(type_id):
+    """Returns AbilityIds for spells available for given unit type."""
+    available = []
+    for spell in SPELL_LIST:
+        if type_id in spell:
+            available.append(spell[type_id])
+        else:  # spells are in order, once found nothing, there will be no more spells
+            break
+    return available
+
+
+#protoss
+
+#terran
+
+#zerg
 
 ####ACTIONS
 
@@ -211,6 +327,7 @@ def train_unit(race, unit, building):  # <-pass building/larva
 
 
 def goal_air_unit(race):
+    """Returns air units for air tech goal."""
     goal_units = None
     if race == Race.Protoss:
         goal_units = (STARGATE_UNITS["Void Ray"], STARGATE_UNITS["Carrier"])
@@ -223,6 +340,7 @@ def goal_air_unit(race):
 
 
 def get_supply_args(race):
+    """Returns arguments which can be provided to increase supply count."""
     if race == Race.Protoss:
         return (UnitTypeId.PROBE, UnitTypeId.PYLON)
     elif race == Race.Terran:
@@ -232,16 +350,24 @@ def get_supply_args(race):
 
     return None
 
+def supply_building_time(race):
+    """Returns ingame time required for supply units to be built/trained."""
+    if race == Race.Terran:
+        return 21  # ingame seconds
+    else:
+        return 18
 
 # example: get_available_buildings(Race.Protoss,[UnitTypeId.NEXUS, UnitTypeId.GATEWAY])
 def get_available_buildings(race, buildings_ready):
-    tree = TECH_TREE[race]
+    """Returns all buildings currently available to be built."""
+    tree = BUILDING_TECH_TREE[race]
     building_set = set(buildings_ready)
     return search_tree(tree, building_set)
 
 
 # recursive dict search tree "all children of the keys"
 def search_tree(dict_tree, keys):
+    """Returns list of all children (keys) of given keys in dictionary search tree"""
     found_keys = []
     for k in set(dict_tree.keys()):
         if dict_tree[k]:
@@ -254,7 +380,8 @@ def search_tree(dict_tree, keys):
 
 #returns tech path for given building or none if no tech path available/defined
 def get_tech_path_needed(race, building):
-    tree = TECH_TREE[race]
+    """Returns tech path for given building or none if no tech path available/defined."""
+    tree = BUILDING_TECH_TREE[race]
     found, path = search_path(tree, building)
     if found:
         return path
@@ -266,6 +393,7 @@ def get_tech_path_needed(race, building):
 # return path includes given key if path was found
 # returns 2 GREATERSPIREs since it has two required tech paths
 def search_path(dict_tree, key):
+    """Returns if the path is found and path to the key in dictionary search tree."""
     found_keys = []
     found = False
     for k in set(dict_tree.keys()):
