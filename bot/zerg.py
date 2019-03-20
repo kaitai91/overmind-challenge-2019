@@ -14,17 +14,18 @@ from bot.race_interface import Race_macro
 
 class ZergMacroBot(Race_macro):
     def __init__(self, controller):
+        super().__init__(controller)
         self.controller = controller
 
-    async def train_unit(self, goal, unit):
+    async def train_unit(self, building_type, unit_type):
         controller = self.controller
         fl = False
-        if unit in racial.MORPH_UNITS:
-            unit = racial.MORPH_UNITS[unit]
+        if unit_type in racial.MORPH_UNITS:
+            unit_type = racial.MORPH_UNITS[unit_type]
             fl = True
-        action = controller.train_units(controller.th_type, unit, 1)
+        action = controller.train_units(controller.th_type, unit_type, 1)
         if fl:
-            action.extend(controller.morph_by_id(unit, 1))
+            action.extend(controller.morph_by_id(unit_type, 1))
         return action
 
     async def general_macro(self):
@@ -93,6 +94,7 @@ class ZergMacroBot(Race_macro):
     # following ones adopted (and modified) from hydralisk_push.py
 
     def queen_spawn(self, townhall):
+        """Trains queen in given hatch/lair/hive."""
         controller = self.controller
 
         if controller.units(UnitTypeId.SPAWNINGPOOL).ready.exists:
@@ -102,6 +104,7 @@ class ZergMacroBot(Race_macro):
                     return townhall.train(UnitTypeId.QUEEN)
 
     def queens_spawn(self, townhalls=None):
+        """trains queens in several townhalls."""
         actions = []
         if not townhalls:
             townhalls = self.controller.townhalls.ready
@@ -113,11 +116,13 @@ class ZergMacroBot(Race_macro):
         return actions
 
     def queen_inject(self, queen, townhall):
+        """Inject larva to nearby townhall."""
         # abilities = await self.get_available_abilities(queen)
         if queen.energy >= 25:  # inject cost is 25
             return queen(AbilityId.EFFECT_INJECTLARVA, townhall)
 
     def queens_inject(self, queens=None, townhalls=None, stacking=False):
+        """Inject larvae to nearby townhalls."""
         controller = self.controller
 
         actions = []
@@ -138,6 +143,7 @@ class ZergMacroBot(Race_macro):
         return actions
 
     def morph_overseer(self, overlord=None):
+        """Morphs an overlord into overseer."""
         controller = self.controller
 
         if overlord:

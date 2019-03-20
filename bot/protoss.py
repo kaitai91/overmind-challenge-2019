@@ -14,12 +14,13 @@ class ProtossMacroBot(Race_macro):
 
     # GENERAL METHODS
     def __init__(self, controller):
+        super().__init__(controller)
         self.controller = controller
 
-    async def train_unit(self, goal, unit):
+    async def train_unit(self, building_type, unit_type):
         controller = self.controller
-        facility = controller.tech_goals[goal]["prod"]
-        action = controller.train_units(facility, unit)
+        facility = controller.tech_goals[building_type]["prod"]
+        action = controller.train_units(facility, unit_type)
         return action
 
     async def general_macro(self):
@@ -59,6 +60,7 @@ class ProtossMacroBot(Race_macro):
     # RACE SPECIFIC METHODS:
 
     def request_observer(self):
+        """Requests observer to be built."""
         controller = self.controller
 
         observer = UnitTypeId.OBSERVER
@@ -75,6 +77,7 @@ class ProtossMacroBot(Race_macro):
     # chrono boost buildings with queued production
     # adopted from warpgate_push.py
     def chronoboost(self, nexus=None, target=None):
+        """Uses nexus chronoboost on given target."""
         controller = self.controller
 
         if not nexus:
@@ -88,6 +91,7 @@ class ProtossMacroBot(Race_macro):
             return nexus(AbilityId.EFFECT_CHRONOBOOSTENERGYCOST, target)
 
     def spam_chronoboost(self, nexi=None, targets=None):
+        """Uses nexus chronoboosts on given targets."""
         controller = self.controller
 
         actions = []
