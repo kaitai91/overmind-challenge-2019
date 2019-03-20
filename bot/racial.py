@@ -2,9 +2,9 @@
 # Racial macro management module
 # (c) kaitai
 # Includes Townhalls, Production Buildings, Workers, Tech tree, and more
-# TODO: Add unit production
 # TODO: think whether text strings are sensible and maybe remove them
 # TODO: more consistent way of using variables vs functions
+# TODO: add upgrades (attack, armor, speed, stim...)
 
 from sc2 import Race
 from sc2.ids.unit_typeid import *
@@ -120,11 +120,7 @@ PROD_B_TYPES = \
     {Race.Protoss: {UnitTypeId.GATEWAY, UnitTypeId.WARPGATE, UnitTypeId.ROBOTICSFACILITY, UnitTypeId.STARGATE},
     Race.Terran: {UnitTypeId.BARRACKS, UnitTypeId.FACTORY, UnitTypeId.STARPORT},
     Race.Zerg: {UnitTypeId.HATCHERY, }}
-# TECH_B_TYPES = \
-#     {Race.Protoss: {UnitTypeId.NEXUS, UnitTypeId.PYLON, UnitTypeId.GATEWAY, UnitTypeId.CYBERNETICSCORE,
-#                     UnitTypeId.ROBOTICSFACILITY, UnitTypeId.STARGATE, UnitTypeId.TWILIGHTCOUNCIL },
-#     Race.Terran: {UnitTypeId.BARRACKS, UnitTypeId.FACTORY, UnitTypeId.STARPORT},
-#     Race.Zerg: {UnitTypeId.HATCHERY, }}
+
 # primary, [secondary]
 SUPPLY_UNITS = {Race.Protoss: {UnitTypeId.PYLON, UnitTypeId.NEXUS},
                 Race.Terran: {UnitTypeId.SUPPLYDEPOT, UnitTypeId.COMMANDCENTER},
@@ -215,7 +211,7 @@ NEXUS = {UnitTypeId.NEXUS: {AbilityId.NEXUSTRAIN_PROBE, AbilityId.NEXUSTRAINMOTH
 #zerg
 
 ##UNIT ABILITIES
-##TODO: test spell abilities
+# TODO: test spell abilities
 SPELL1 = {
     # protoss
     UnitTypeId.ZEALOT: AbilityId.EFFECT_CHARGE, UnitTypeId.ADEPT: AbilityId.ADEPTPHASESHIFT_ADEPTPHASESHIFT,
@@ -294,6 +290,7 @@ SPELL5 = {
 SPELL_LIST = [SPELL1, SPELL2, SPELL3, SPELL4, SPELL5]
 
 def get_spells(type_id):
+    """Returns AbilityIds for spells available for given unit type."""
     available = []
     for spell in SPELL_LIST:
         if type_id in spell:
@@ -330,6 +327,7 @@ def train_unit(race, unit, building):  # <-pass building/larva
 
 
 def goal_air_unit(race):
+    """Returns air units for air tech goal."""
     goal_units = None
     if race == Race.Protoss:
         goal_units = (STARGATE_UNITS["Void Ray"], STARGATE_UNITS["Carrier"])
@@ -342,6 +340,7 @@ def goal_air_unit(race):
 
 
 def get_supply_args(race):
+    """Returns arguments which can be provided to increase supply count."""
     if race == Race.Protoss:
         return (UnitTypeId.PROBE, UnitTypeId.PYLON)
     elif race == Race.Terran:
@@ -351,9 +350,16 @@ def get_supply_args(race):
 
     return None
 
+def supply_building_time(race):
+    """Returns ingame time required for supply units to be built/trained."""
+    if race == Race.Terran:
+        return 21  # ingame seconds
+    else:
+        return 18
 
 # example: get_available_buildings(Race.Protoss,[UnitTypeId.NEXUS, UnitTypeId.GATEWAY])
 def get_available_buildings(race, buildings_ready):
+    """Returns all buildings currently available to be built."""
     tree = BUILDING_TECH_TREE[race]
     building_set = set(buildings_ready)
     return search_tree(tree, building_set)
@@ -361,6 +367,7 @@ def get_available_buildings(race, buildings_ready):
 
 # recursive dict search tree "all children of the keys"
 def search_tree(dict_tree, keys):
+    """Returns list of all children (keys) of given keys in dictionary search tree"""
     found_keys = []
     for k in set(dict_tree.keys()):
         if dict_tree[k]:
@@ -373,6 +380,7 @@ def search_tree(dict_tree, keys):
 
 #returns tech path for given building or none if no tech path available/defined
 def get_tech_path_needed(race, building):
+    """Returns tech path for given building or none if no tech path available/defined."""
     tree = BUILDING_TECH_TREE[race]
     found, path = search_path(tree, building)
     if found:
@@ -385,6 +393,7 @@ def get_tech_path_needed(race, building):
 # return path includes given key if path was found
 # returns 2 GREATERSPIREs since it has two required tech paths
 def search_path(dict_tree, key):
+    """Returns if the path is found and path to the key in dictionary search tree."""
     found_keys = []
     found = False
     for k in set(dict_tree.keys()):
