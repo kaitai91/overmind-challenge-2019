@@ -14,18 +14,20 @@ class TerranMacroBot(Race_macro):
 
     # GENERAL METHODS
     def __init__(self, controller):
+        super().__init__(controller)
         self.controller = controller
+        self.__save_scans = 0
 
-    async def train_unit(self, goal, unit):
-        facility = self.controller.tech_goals[goal]["prod"]
-        if unit not in racial.NEEDS_TECHLAB:
-            action = self.controller.train_units(facility, unit)
+    async def train_unit(self, building_type, unit_type):
+        facility = self.controller.tech_goals[building_type]["prod"]
+        if unit_type not in racial.NEEDS_TECHLAB:
+            action = self.controller.train_units(facility, unit_type)
         else:
             buildings = self.controller.units.structure.of_type(facility).noqueue.filter(lambda st: st.add_on_tag != 0)
             if buildings.exists:  # noqueue makes sure the addon is also finished
                 action = []
                 for b in buildings:
-                    a = b.train(unit)
+                    a = b.train(unit_type)
                     if a:
                         action.append(a)
             else:
@@ -37,7 +39,7 @@ class TerranMacroBot(Race_macro):
         controller = self.controller
         actions = []
         actions.extend(self.morph_orbital())
-        actions.extend(self.drop_mules(save_scans=0))
+        actions.extend(self.drop_mules(save_scans=self.save_scans))
         a = self.do_repairs()
         if a:
             actions.append(a)
@@ -56,7 +58,7 @@ class TerranMacroBot(Race_macro):
         # controller.set_tech_goal(UnitTypeId.ARMORY, self.th_type, UnitTypeId.FACTORY, 2,
         #                    UnitTypeId.HELLIONTANK)
 
-        # tanks #TODO: make building techlab possible (DONE)
+        # tanks
         controller.set_tech_goal(UnitTypeId.FACTORY, controller.th_type, UnitTypeId.FACTORY, 2,
                                  UnitTypeId.SIEGETANK)
 
@@ -71,6 +73,7 @@ class TerranMacroBot(Race_macro):
 
     # RACE SPECIFIC METHODS:
     def continue_building(self):
+        """Sends SCV to build unfinished building with no SCV."""
         controller = self.controller
         actions = []
         buildings = controller.units.structure.not_ready.exclude_type(
@@ -94,6 +97,7 @@ class TerranMacroBot(Race_macro):
     # make orbitals and drop mules (from mass_reaper.py)
     # morph commandcenter to orbitalcommand
     def morph_orbital(self):
+        """Turns all idle Command Centers into Orbital Commands."""
         controller = self.controller
         actions = []
         if controller.units(UnitTypeId.BARRACKS).ready.exists and controller.can_afford(
@@ -103,10 +107,13 @@ class TerranMacroBot(Race_macro):
 
         return actions
 
-    def drop_mules(self, mf=None, save_scans=1):
+    def drop_mules(self, mf=None, save_scans=None):
+        """Drops mules from Orbital Commands to nearby mineral field."""
         controller = self.controller
         # TODO: make possible to save more than 1 scan per oc (exact amounts)
         actions = []
+        if not save_scans:
+            save_scans = self.save_scans
         if not mf:
             for oc in controller.units(UnitTypeId.ORBITALCOMMAND).filter(lambda x: x.energy >= 50):
                 if save_scans:
@@ -128,6 +135,7 @@ class TerranMacroBot(Race_macro):
         return actions
 
     def do_repairs(self, scv=None, target=None, no_checks=False):
+        """Repairs damaged unit with SCV."""
         controller = self.controller
         if (controller.repair_flag or controller.workers.amount < 8) and not no_checks:  # dont repair if more income is needed
             return
@@ -157,6 +165,7 @@ class TerranMacroBot(Race_macro):
             controller.repair_flag = 0.34
 
     async def build_addon(self, building, reactor=True, location=None):
+        """Builds an addon for building."""
         action = None
         if not location:
             if not building.is_flying:
@@ -180,6 +189,7 @@ class TerranMacroBot(Race_macro):
         return action
 
     async def can_place_addon(self, building):
+        """Checks if there is room for addon."""
         addon_offset = position_imported.Point2((2, 0))
         can_place = await self.controller.can_place(UnitTypeId.SUPPLYDEPOT, building.position.offset(addon_offset))
         if can_place:
@@ -188,6 +198,7 @@ class TerranMacroBot(Race_macro):
             return False
 
     async def build_addons(self, type_id, reactor=True, max_amount=0):
+        """Builds addons for buildings with given UnitTypeId."""
         buildings = self.controller.units.structure.of_type(type_id).noqueue.filter(lambda st: st.add_on_tag == 0)
         actions = []
         count = 0
@@ -201,8 +212,18 @@ class TerranMacroBot(Race_macro):
                         break
         return actions
 
+    @property
+    def save_scans(self):
+        return self.__save_scans
+
+    @save_scans.setter
+    def save_scans(self, save_scans):
+        self.__save_scans = save_scans
+
+
 #HELPERS
 def check_if_mechanical(unit_list):
+    """Returns repairable (Terran) units and structures in given list."""
 
     is_mech = unit_list.structure
     is_mech.extend(unit_list.not_structure.of_type(racial.MECHANICALS))
