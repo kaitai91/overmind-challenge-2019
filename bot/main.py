@@ -2,6 +2,7 @@
 # add scouting, reactions for scout info
 # use numpy (for faster numeric calculations)
 # add upgrades
+# add scouting and save enemy tech / units to counter them
 
 #TODO: flags/vars
 # put all similar variables into collections (DONE - partially)
@@ -10,6 +11,7 @@
 # make flags in one variable and reduce everything at once each step (numpy needed for easy implementation)
 # change (tag data) variables in to numpy arrays for quicker operations
 # make/use heatmap for enemy locations to defend (maybe with connected components)
+# use variable to check mineral and gas amount changes within frame (and update it respectively)
 
 #TODO: macro:
 # save researched tech somewhere and fetch trainable units from there (for more efficient training esp. with zerg)
@@ -46,21 +48,15 @@ import math
 
 #code snippets for different races
 if __name__ == '__main__':
-    import racial
+    import id_map
 else:
-    import bot.racial as racial
+    import bot.id_map as id_map
     from bot.unit_micro import MICRO_BY_TYPE
     import bot.protoss as protoss
     import bot.terran as terran
     import bot.zerg as zerg
 
 # STATIC VARS:
-
-CREEP_TUMORS = {UnitTypeId.CREEPTUMOR, UnitTypeId.CREEPTUMORBURROWED,
-                UnitTypeId.CREEPTUMORMISSILE, UnitTypeId.CREEPTUMORQUEEN}
-CHANGELING = {UnitTypeId.CHANGELING, UnitTypeId.CHANGELINGZEALOT,
-              UnitTypeId.CHANGELINGMARINE, UnitTypeId.CHANGELINGMARINESHIELD,
-              UnitTypeId.CHANGELINGZERGLING, UnitTypeId.CHANGELINGZERGLINGWINGS}
 
 WORKER_UPPER_LIMIT = 99
 
@@ -141,12 +137,12 @@ class MyBot(sc2.BotAI):
 
     def on_start(self):
         """Run when game starts."""
-        self.th_type = racial.TOWN_HALL_TYPES[self.race]
-        self.w_type = racial.WORKER_TYPES[self.race]
-        self.prod_bs = racial.PROD_B_TYPES[self.race]
-        self.s_args = racial.get_supply_args(self.race) #<- method
-        self.tech_tree = racial.BUILDING_TECH_TREE[self.race]
-        self.gas_type = racial.GAS_BUILDINGS[self.race]
+        self.th_type = id_map.TOWN_HALL_TYPES[self.race]
+        self.w_type = id_map.WORKER_TYPES[self.race]
+        self.prod_bs = id_map.PROD_B_TYPES[self.race]
+        self.s_args = id_map.get_supply_args(self.race) #<- method
+        self.tech_tree = id_map.BUILDING_TECH_TREE[self.race]
+        self.gas_type = id_map.GAS_BUILDINGS[self.race]
 
         # print(self.tech_goals)
         if self.race == Race.Protoss:
@@ -311,7 +307,7 @@ class MyBot(sc2.BotAI):
                  (self.units.not_structure.not_flying.amount/2 + 1)):
 
             #set new attack_flag
-            enemy_buildings = self.known_enemy_structures().not_flying.exclude_type(CREEP_TUMORS)
+            enemy_buildings = self.known_enemy_structures().not_flying.exclude_type(id_map.CREEP_TUMORS)
             if not self.killed_start_base:
                 target = self.enemy_start_locations[0]
                 if enemy_buildings.amount > 0:
@@ -564,7 +560,7 @@ class MyBot(sc2.BotAI):
         actions = []
         buildings = self.units(building_type).ready
         if self.race == Race.Terran:  # include buildings with reactor and  at most 2 units in production
-            reactor_tags = self.units.structure.of_type(racial.REACTORS).tags #owned reactors and their tags
+            reactor_tags = self.units.structure.of_type(id_map.REACTORS).tags #owned reactors and their tags
             buildings_with_reactor = \
                 buildings.filter(lambda s: s.add_on_tag in reactor_tags).filter(lambda rb: len(rb.orders) < 2)
             # print(reactor_tags)
@@ -591,8 +587,8 @@ class MyBot(sc2.BotAI):
         With alt flag overlords are morphed into transporting overlords."""
         #so far alt is used only for overlord transport morph - not tested
         if alt and target_unit.type_id == UnitTypeId.OVERLORD:  # prevent crashing if trying alt with other units
-            return target_unit(racial.MORPH2[target_unit.type_id])
-        return target_unit(racial.MORPH[target_unit.type_id])
+            return target_unit(id_map.MORPH2[target_unit.type_id])
+        return target_unit(id_map.MORPH[target_unit.type_id])
 
     def morph_units(self, target_units, alt=False):
         """Morph many units at once."""
@@ -628,7 +624,7 @@ class MyBot(sc2.BotAI):
             await self.chat_send(f"I have {amount} Production buildings")
         if ths.exists:
             th = ths.random
-            near_completion = (71-racial.supply_building_time(self.race)) / 71
+            near_completion = (71 - id_map.supply_building_time(self.race)) / 71
             ths_about_to_finish = ths.not_ready.filter(lambda t: t.build_progress > near_completion)
             if self.supply_left < len(ths) + 4 and \
                     self.already_pending(self.s_args[1]) < min(4, amount - ths_about_to_finish.amount):
@@ -1142,7 +1138,7 @@ class MyBot(sc2.BotAI):
         if unit.type_id in MICRO_BY_TYPE:
             # print("using specific micro function")
             close_a_enemies = self.known_enemy_units.flying
-            close_g_enemies = self.known_enemy_units.not_flying.exclude_type(CHANGELING)
+            close_g_enemies = self.known_enemy_units.not_flying.exclude_type(id_map.CHANGELINGS)
             known_enemies = close_a_enemies or close_g_enemies
             # TODO: find out why this bugs units
             # if not known_enemies.exists:
@@ -1180,7 +1176,7 @@ class MyBot(sc2.BotAI):
 
             # pursue enemy
             close_a_enemies = self.known_enemy_units.flying.closer_than(16, unit.position)
-            close_g_enemies = self.known_enemy_units.not_flying.closer_than(16, unit.position).exclude_type(CHANGELING)
+            close_g_enemies = self.known_enemy_units.not_flying.closer_than(16, unit.position).exclude_type(id_map.CHANGELINGS)
             close_enemies = 0
             if unit.can_attack_air:
                 close_enemies += close_a_enemies.amount
@@ -1236,7 +1232,8 @@ class MyBot(sc2.BotAI):
 
             #pursue enemy
             orig = tags[tg]["orig_target"]  # for defending at defence location
-            close_enemies = self.known_enemy_units.not_flying.closer_than(unit.sight_range, unit.position).exclude_type(CHANGELING).sorted_by_distance_to(unit)
+            close_enemies = self.known_enemy_units.not_flying.closer_than(
+                unit.sight_range, unit.position).exclude_type(id_map.CHANGELINGS).sorted_by_distance_to(unit)
             target = tags[tg]["target"]
             if close_enemies.amount > 0:
                 #pursue only so far:
@@ -1360,7 +1357,7 @@ class MyBot(sc2.BotAI):
         curr_step = self.update_tech_progress(tech_goal, ready_buildings, not_ready_buildings)
 
         # build advancement in tech
-        if curr_step in racial.MORPH_BUILDINGS:
+        if curr_step in id_map.MORPH_BUILDINGS:
             pending = self.already_pending(curr_step, all_units=True)
         else:
             pending = self.already_pending(curr_step)
@@ -1368,7 +1365,7 @@ class MyBot(sc2.BotAI):
         if not pending and (curr_step not in ready_types) and self.workers.ready.collecting.amount > 0:  # or old_step != curr_step:
             if curr_step is self.th_type:  # in case townhall was lost
                 await self.expand()
-            elif curr_step not in racial.MORPH_BUILDINGS:
+            elif curr_step not in id_map.MORPH_BUILDINGS:
                 if self.race != Race.Protoss:
                     close_by = self.townhalls.ready.random.position.towards(self.game_info.map_center, 5)
                     # await self.build(curr_step, near=close_by)
@@ -1376,7 +1373,7 @@ class MyBot(sc2.BotAI):
                     close_by = self.units.of_type(UnitTypeId.PYLON).ready.random.position
                 await self.build(curr_step, near=close_by)
             else:
-                all_units_of_type = self.units.structure.of_type(racial.MORPH_BUILDINGS[curr_step]).ready.noqueue
+                all_units_of_type = self.units.structure.of_type(id_map.MORPH_BUILDINGS[curr_step]).ready.noqueue
                 morph_any_of_these = all_units_of_type.random_group_of(all_units_of_type.amount)
                 # print(all_units_of_type)
                 # print(morph_any_of_these)
@@ -1426,9 +1423,9 @@ class MyBot(sc2.BotAI):
         progress = self.check_tech_progress(tech_goal, ready_buildings, not_ready_buildings)
 
         if progress == 2 or progress == 0:  # current step ready or no progress
-            whole_path = racial.get_tech_path_needed(self.race, tech_goal)
+            whole_path = id_map.get_tech_path_needed(self.race, tech_goal)
             ready_types = [b.type_id for b in ready_buildings]
-            available_tech = racial.get_available_buildings(self.race, ready_types)
+            available_tech = id_map.get_available_buildings(self.race, ready_types)
             available_new = set(available_tech).difference(ready_types)
 
             # TODO: make sure the bot wont crash if there is wrong tech goal for it (such as hydraliskden for protoss)
@@ -1472,7 +1469,7 @@ class MyBot(sc2.BotAI):
                 return 2
 
         #exception handling - MORPH_BUILDINGS
-        if curr_step in racial.MORPH_BUILDINGS:
+        if curr_step in id_map.MORPH_BUILDINGS:
             found = self.check_morphing_tech(curr_step)
             if found: #could return found as well for this instance
                 return 1
@@ -1492,7 +1489,7 @@ class MyBot(sc2.BotAI):
         Only needed when building is morphing into higher tier.
         :return: 1,0 - tech progress: in progress, no progress
         """
-        needed = racial.MORPH_BUILDINGS[tech]
+        needed = id_map.MORPH_BUILDINGS[tech]
         # TODO: take dynamically from morph building and assign the right ability too
         #  (latter not currently implemented in racial)
         in_progress = False
@@ -1554,12 +1551,12 @@ class MyBot(sc2.BotAI):
     def set_air_tech_goal(self):
         """Adds air tech as goal for the bot."""
         #and finally air tech
-        prod_building = list(racial.AIR_TECH[self.race])[0]  # don't "pop" from racial.AIR_TECH
+        prod_building = list(id_map.AIR_TECH[self.race])[0]  # don't "pop" from racial.AIR_TECH
         if self.race == Race.Terran:
-            goal_unit = list(racial.goal_air_unit(self.race))[1]  # don't "pop" from racial.AIR_TECH
+            goal_unit = list(id_map.goal_air_unit(self.race))[1]  # don't "pop" from racial.AIR_TECH
             goal_building = UnitTypeId.FUSIONCORE
         else:
-            goal_unit = list(racial.goal_air_unit(self.race))[0]
+            goal_unit = list(id_map.goal_air_unit(self.race))[0]
             goal_building = prod_building
         if goal_building not in self.tech_goals:
             self.set_tech_goal(goal_building, self.th_type, prod_building, 5, goal_unit)  # air tech
@@ -1665,6 +1662,6 @@ def check_if_mechanical(unit_list):
     """Returns repairable (Terran) units and structures in given list."""
 
     is_mech = unit_list.structure
-    is_mech.extend(unit_list.not_structure.of_type(racial.MECHANICALS))
+    is_mech.extend(unit_list.not_structure.of_type(id_map.MECHANICALS))
     return is_mech
 

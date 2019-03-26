@@ -8,7 +8,7 @@ from sc2.ids.buff_id import *
 
 from sc2 import position as position_imported
 
-import bot.racial as racial
+import bot.id_map as id_map
 from bot.race_interface import Race_macro
 
 
@@ -20,8 +20,8 @@ class ZergMacroBot(Race_macro):
     async def train_unit(self, building_type, unit_type):
         controller = self.controller
         fl = False
-        if unit_type in racial.MORPH_UNITS:
-            unit_type = racial.MORPH_UNITS[unit_type]
+        if unit_type in id_map.MORPH_UNITS:
+            unit_type = id_map.MORPH_UNITS[unit_type]
             fl = True
         action = controller.train_units(controller.th_type, unit_type, 1)
         if fl:
@@ -131,7 +131,7 @@ class ZergMacroBot(Race_macro):
         if not townhalls:
             townhalls = controller.townhalls.ready
         for queen in queens:
-            if queen.energy >= 25:  # lambda x: x.energy >= 50
+            if queen.energy >= 25:
                 ths = townhalls.ready.closer_than(8, queen)
                 if not stacking:  # don't stack larva injects
                     ths = ths.filter(lambda t: not t.has_buff(BuffId.QUEENSPAWNLARVATIMER))
@@ -151,7 +151,6 @@ class ZergMacroBot(Race_macro):
         if controller.townhalls.of_type({UnitTypeId.LAIR, UnitTypeId.HIVE}).amount > 0:
             ovls = controller.units.of_type(UnitTypeId.OVERLORD)
             if ovls.amount > 0:
-                # print(f"trying to create overseer")
                 return controller.morph_unit(ovls.random)
 
 # HELPERS

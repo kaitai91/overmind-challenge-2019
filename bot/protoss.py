@@ -7,7 +7,7 @@ from sc2.ids.buff_id import *
 
 from sc2 import position as position_imported
 
-import bot.racial as racial
+import bot.id_map as id_map
 from bot.race_interface import Race_macro
 
 class ProtossMacroBot(Race_macro):

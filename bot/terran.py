@@ -6,7 +6,7 @@ from sc2.ids.unit_typeid import *
 from sc2.ids.ability_id import *
 from sc2 import position as position_imported
 
-import bot.racial as racial
+import bot.id_map as id_map
 from bot.race_interface import Race_macro
 
 
@@ -20,7 +20,7 @@ class TerranMacroBot(Race_macro):
 
     async def train_unit(self, building_type, unit_type):
         facility = self.controller.tech_goals[building_type]["prod"]
-        if unit_type not in racial.NEEDS_TECHLAB:
+        if unit_type not in id_map.NEEDS_TECHLAB:
             action = self.controller.train_units(facility, unit_type)
         else:
             buildings = self.controller.units.structure.of_type(facility).noqueue.filter(lambda st: st.add_on_tag != 0)
@@ -77,7 +77,7 @@ class TerranMacroBot(Race_macro):
         controller = self.controller
         actions = []
         buildings = controller.units.structure.not_ready.exclude_type(
-            set(racial.TECHLABS).union(racial.REACTORS).union(racial.TECHREACTORS))
+            set(id_map.TECHLABS).union(id_map.REACTORS).union(id_map.TECHREACTORS))
         builders = controller.workers.filter(lambda w: w.is_constructing_scv)
         # for b in builders:
         #     print(f"{b.orders}")
@@ -173,9 +173,9 @@ class TerranMacroBot(Race_macro):
                 can_place = await self.can_place_addon(building)
                 if can_place:
                     if reactor:
-                        action = building(racial.BUILD_ADDONS[1])
+                        action = building(id_map.BUILD_ADDONS[1])
                     else:
-                        action = building(racial.BUILD_ADDONS[0])
+                        action = building(id_map.BUILD_ADDONS[0])
                 else:
                     building(AbilityId.LIFT)
             # else:  #not working
@@ -226,5 +226,5 @@ def check_if_mechanical(unit_list):
     """Returns repairable (Terran) units and structures in given list."""
 
     is_mech = unit_list.structure
-    is_mech.extend(unit_list.not_structure.of_type(racial.MECHANICALS))
+    is_mech.extend(unit_list.not_structure.of_type(id_map.MECHANICALS))
     return is_mech

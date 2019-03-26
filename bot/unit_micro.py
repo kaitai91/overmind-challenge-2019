@@ -2,7 +2,7 @@
 # (c) kaitai
 
 from sc2.constants import *
-from .racial import TRANSFORM
+from .id_map import TRANSFORM
 
 
 class MicroBot:
