@@ -41,8 +41,19 @@ REACTORS = {UnitTypeId.BARRACKSREACTOR, UnitTypeId.FACTORYREACTOR,
             UnitTypeId.STARPORTREACTOR, UnitTypeId.REACTOR}
 TECHLABS = {UnitTypeId.BARRACKSTECHLAB, UnitTypeId.FACTORYTECHLAB,
             UnitTypeId.STARPORTTECHLAB, UnitTypeId.TECHLAB}
-TECHREACTORS = {UnitTypeId.TECHREACTOR, UnitTypeId.FACTORYTECHLAB,
+TECHREACTORS = {UnitTypeId.BARRACKSTECHREACTOR, UnitTypeId.FACTORYTECHLAB,
                 UnitTypeId.STARPORTTECHREACTOR, UnitTypeId.TECHREACTOR}
+
+ADDON_BUILDING = {
+    **dict.fromkeys([UnitTypeId.BARRACKSREACTOR, UnitTypeId.BARRACKSTECHLAB, UnitTypeId.BARRACKSTECHREACTOR],
+                    UnitTypeId.BARRACKS),
+    **dict.fromkeys([UnitTypeId.FACTORYREACTOR, UnitTypeId.FACTORYTECHLAB, UnitTypeId.FACTORYTECHREACTOR],
+                    UnitTypeId.FACTORY),
+    **dict.fromkeys([UnitTypeId.STARPORTREACTOR, UnitTypeId.STARPORTTECHLAB, UnitTypeId.STARPORTTECHREACTOR],
+                    UnitTypeId.STARPORT),
+
+}
+
 NEEDS_TECHLAB = {UnitTypeId.MARAUDER, UnitTypeId.GHOST,
                  UnitTypeId.SIEGETANK, UnitTypeId.THOR, UnitTypeId.CYCLONE,
                  UnitTypeId.RAVEN, UnitTypeId.BANSHEE, UnitTypeId.BATTLECRUISER}
@@ -377,52 +388,51 @@ UNIT_UPGRADES = {
     UnitTypeId.BANSHEE: {UpgradeId.BANSHEECLOAK, UpgradeId.BANSHEESPEED},
 
     # zerg
-    # missing: ultralisk speed upgrade
     UnitTypeId.DRONE: {}, UnitTypeId.ZERGLING: {UpgradeId.ZERGLINGMOVEMENTSPEED, UpgradeId.ZERGLINGATTACKSPEED},
     UnitTypeId.BANELING: {UpgradeId.CENTRIFICALHOOKS}, UnitTypeId.ROACH: {UpgradeId.GLIALRECONSTITUTION, UpgradeId.TUNNELINGCLAWS},
     UnitTypeId.RAVAGER: {}, UnitTypeId.HYDRALISK: {UpgradeId.EVOLVEGROOVEDSPINES, UpgradeId.EVOLVEMUSCULARAUGMENTS},
     UnitTypeId.LURKERMP: {UpgradeId.LURKERRANGE}, UnitTypeId.VIPER: {},
     UnitTypeId.MUTALISK: {}, UnitTypeId.CORRUPTOR: {},
     UnitTypeId.SWARMHOSTMP: {}, UnitTypeId.INFESTOR: {UpgradeId.INFESTORENERGYUPGRADE, UpgradeId.NEURALPARASITE},
-    UnitTypeId.ULTRALISK: {UpgradeId.CHITINOUSPLATING, }, UnitTypeId.BROODLORD: {},
+    UnitTypeId.ULTRALISK: {UpgradeId.CHITINOUSPLATING,  UpgradeId.ANABOLICSYNTHESIS}, UnitTypeId.BROODLORD: {},
     **dict.fromkeys([UnitTypeId.OVERLORD, UnitTypeId.OVERSEER], {UpgradeId.OVERLORDSPEED}),
     UnitTypeId.QUEEN: {},
 
 }
 
 # from which building the upgrade is researched
-UPGRADES_FROM = {
+UPGRADING_BUILDING = {
 
     # protoss
-    **dict.fromkeys([*P_GROUND, *P_SHIELD_UPG], {UnitTypeId.FORGE}),
-    **dict.fromkeys([*P_AIR, UpgradeId.WARPGATERESEARCH], {UnitTypeId.CYBERNETICSCORE}),
-    **dict.fromkeys([UpgradeId.OBSERVERGRAVITICBOOSTER, UpgradeId.GRAVITICDRIVE, UpgradeId.EXTENDEDTHERMALLANCE], {UnitTypeId.ROBOTICSBAY}),
+    **dict.fromkeys([*P_GROUND, *P_SHIELD_UPG], UnitTypeId.FORGE),
+    **dict.fromkeys([*P_AIR, UpgradeId.WARPGATERESEARCH], UnitTypeId.CYBERNETICSCORE),
+    **dict.fromkeys([UpgradeId.OBSERVERGRAVITICBOOSTER, UpgradeId.GRAVITICDRIVE, UpgradeId.EXTENDEDTHERMALLANCE], UnitTypeId.ROBOTICSBAY),
     **dict.fromkeys([UpgradeId.PHOENIXRANGEUPGRADE, ], {UnitTypeId.FLEETBEACON}),
-    **dict.fromkeys([UpgradeId.CHARGE, UpgradeId.BLINKTECH, UpgradeId.ADEPTPIERCINGATTACK], {UnitTypeId.TWILIGHTCOUNCIL}),
-    **dict.fromkeys([UpgradeId.PSISTORMTECH, ], {UnitTypeId.TEMPLARARCHIVE}),
-    **dict.fromkeys([UpgradeId.DARKTEMPLARBLINKUPGRADE, ], {UnitTypeId.DARKSHRINE}),
+    **dict.fromkeys([UpgradeId.CHARGE, UpgradeId.BLINKTECH, UpgradeId.ADEPTPIERCINGATTACK], UnitTypeId.TWILIGHTCOUNCIL),
+    **dict.fromkeys([UpgradeId.PSISTORMTECH, ], UnitTypeId.TEMPLARARCHIVE),
+    **dict.fromkeys([UpgradeId.DARKTEMPLARBLINKUPGRADE, ], UnitTypeId.DARKSHRINE),
 
     # terran
-    **dict.fromkeys([UpgradeId.SHIELDWALL, UpgradeId.STIMPACK, UpgradeId.PUNISHERGRENADES], {UnitTypeId.BARRACKSTECHLAB}),
-    **dict.fromkeys([UpgradeId.INFERNALPREIGNITERS, UpgradeId.MAGFIELDLAUNCHERS, UpgradeId.DRILLCLAWS, UpgradeId.SMARTSERVOS],
-                    {UnitTypeId.FACTORYTECHLAB}),
-    **dict.fromkeys([*T_VEHICLE_ATTACK, *T_SHIP_ATTACK, *T_PLATING], {UnitTypeId.ARMORY}),
-    **dict.fromkeys([UpgradeId.PERSONALCLOAKING, ], {UnitTypeId.GHOSTACADEMY}),
+    **dict.fromkeys([UpgradeId.SHIELDWALL, UpgradeId.STIMPACK, UpgradeId.PUNISHERGRENADES], UnitTypeId.BARRACKSTECHLAB),
+    **dict.fromkeys([UpgradeId.INFERNALPREIGNITERS, UpgradeId.MAGFIELDLAUNCHERS, UpgradeId.DRILLCLAWS,
+                     UpgradeId.SMARTSERVOS], UnitTypeId.FACTORYTECHLAB),
+    **dict.fromkeys([*T_VEHICLE_ATTACK, *T_SHIP_ATTACK, *T_PLATING], UnitTypeId.ARMORY),
+    **dict.fromkeys([UpgradeId.PERSONALCLOAKING, ], UnitTypeId.GHOSTACADEMY),
     **dict.fromkeys([UpgradeId.NAPALMFUELTANKS, UpgradeId.RAVENCORVIDREACTOR, UpgradeId.BANSHEECLOAK,
-                     UpgradeId.BANSHEESPEED, UpgradeId.LIBERATORAGRANGEUPGRADE], {UnitTypeId.STARPORTTECHLAB}),
-    **dict.fromkeys([UpgradeId.YAMATOCANNON, ], {UnitTypeId.FUSIONCORE}),
+                     UpgradeId.BANSHEESPEED, UpgradeId.LIBERATORAGRANGEUPGRADE], UnitTypeId.STARPORTTECHLAB),
+    **dict.fromkeys([UpgradeId.YAMATOCANNON, ], UnitTypeId.FUSIONCORE),
 
     # zerg
-    **dict.fromkeys([UpgradeId.OVERLORDSPEED, UpgradeId.BURROW], {UnitTypeId.HATCHERY, UnitTypeId.LAIR, UnitTypeId.HIVE}),
-    **dict.fromkeys([*Z_MELEE_UPGS, *Z_MISSILE_UPGS, *Z_CARAPACE_UPGS], {UnitTypeId.EVOLUTIONCHAMBER}),
-    **dict.fromkeys([UpgradeId.ZERGLINGMOVEMENTSPEED, UpgradeId.ZERGLINGATTACKSPEED], {UnitTypeId.SPAWNINGPOOL}),
-    **dict.fromkeys([UpgradeId.CENTRIFICALHOOKS, ], {UnitTypeId.BANELINGNEST}),
-    **dict.fromkeys([UpgradeId.GLIALRECONSTITUTION, UpgradeId.TUNNELINGCLAWS], {UnitTypeId.ROACHWARREN}),
-    **dict.fromkeys([UpgradeId.EVOLVEGROOVEDSPINES, UpgradeId.EVOLVEMUSCULARAUGMENTS], {UnitTypeId.HYDRALISKDEN}),
-    **dict.fromkeys([UpgradeId.LURKERRANGE, ], {UnitTypeId.LURKERDENMP}),
-    **dict.fromkeys([*Z_FLYER_ATTACK, *Z_FLYER_ARMOR], {UnitTypeId.SPIRE, UnitTypeId.GREATERSPIRE}),
-    **dict.fromkeys([UpgradeId.INFESTORENERGYUPGRADE, UpgradeId.NEURALPARASITE], {UnitTypeId.INFESTATIONPIT}),
-    **dict.fromkeys([UpgradeId.CHITINOUSPLATING, ], {UnitTypeId.ULTRALISKCAVERN}),
+    **dict.fromkeys([UpgradeId.OVERLORDSPEED, UpgradeId.BURROW], UnitTypeId.HATCHERY),
+    **dict.fromkeys([*Z_MELEE_UPGS, *Z_MISSILE_UPGS, *Z_CARAPACE_UPGS], UnitTypeId.EVOLUTIONCHAMBER),
+    **dict.fromkeys([UpgradeId.ZERGLINGMOVEMENTSPEED, UpgradeId.ZERGLINGATTACKSPEED], UnitTypeId.SPAWNINGPOOL),
+    **dict.fromkeys([UpgradeId.CENTRIFICALHOOKS, ], UnitTypeId.BANELINGNEST),
+    **dict.fromkeys([UpgradeId.GLIALRECONSTITUTION, UpgradeId.TUNNELINGCLAWS], UnitTypeId.ROACHWARREN),
+    **dict.fromkeys([UpgradeId.EVOLVEGROOVEDSPINES, UpgradeId.EVOLVEMUSCULARAUGMENTS], UnitTypeId.HYDRALISKDEN),
+    **dict.fromkeys([UpgradeId.LURKERRANGE, ], UnitTypeId.LURKERDENMP),
+    **dict.fromkeys([*Z_FLYER_ATTACK, *Z_FLYER_ARMOR], UnitTypeId.SPIRE),
+    **dict.fromkeys([UpgradeId.INFESTORENERGYUPGRADE, UpgradeId.NEURALPARASITE], UnitTypeId.INFESTATIONPIT),
+    **dict.fromkeys([UpgradeId.CHITINOUSPLATING, UpgradeId.ANABOLICSYNTHESIS], UnitTypeId.ULTRALISKCAVERN),
 
 }
 
