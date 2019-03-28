@@ -1,8 +1,9 @@
 #TODO: Ideas:
 # add scouting, reactions for scout info
 # use numpy (for faster numeric calculations)
-# add upgrades
+# add upgrades (already in id_map)
 # add scouting and save enemy tech / units to counter them
+# create array for wanted buildings/units and save goal values there, then use it everywhere (tech, add production...)
 
 #TODO: flags/vars
 # put all similar variables into collections (DONE - partially)
@@ -1362,16 +1363,22 @@ class MyBot(sc2.BotAI):
         else:
             pending = self.already_pending(curr_step)
 
-        if not pending and (curr_step not in ready_types) and self.workers.ready.collecting.amount > 0:  # or old_step != curr_step:
+        if not pending and (curr_step not in ready_types):  # or old_step != curr_step:
             if curr_step is self.th_type:  # in case townhall was lost
                 await self.expand()
+            elif curr_step in id_map.ADDON_BUILDING:# and isinstance(self.macro_bot, terran.TerranMacroBot):
+                # print(f"trying to build addon from tech manager")
+                building = id_map.ADDON_BUILDING[curr_step]
+                acts = await self.macro_bot.build_addons(building, reactor=False, max_amount=1)
+                actions.extend(acts)
             elif curr_step not in id_map.MORPH_BUILDINGS:
-                if self.race != Race.Protoss:
-                    close_by = self.townhalls.ready.random.position.towards(self.game_info.map_center, 5)
-                    # await self.build(curr_step, near=close_by)
-                else:
-                    close_by = self.units.of_type(UnitTypeId.PYLON).ready.random.position
-                await self.build(curr_step, near=close_by)
+                if self.workers.ready.collecting.amount > 0:
+                    if self.race != Race.Protoss:
+                        close_by = self.townhalls.ready.random.position.towards(self.game_info.map_center, 5)
+                        # await self.build(curr_step, near=close_by)
+                    else:
+                        close_by = self.units.of_type(UnitTypeId.PYLON).ready.random.position
+                    await self.build(curr_step, near=close_by)
             else:
                 all_units_of_type = self.units.structure.of_type(id_map.MORPH_BUILDINGS[curr_step]).ready.noqueue
                 morph_any_of_these = all_units_of_type.random_group_of(all_units_of_type.amount)
@@ -1559,7 +1566,7 @@ class MyBot(sc2.BotAI):
             goal_unit = list(id_map.goal_air_unit(self.race))[0]
             goal_building = prod_building
         if goal_building not in self.tech_goals:
-            self.set_tech_goal(goal_building, self.th_type, prod_building, 5, goal_unit)  # air tech
+            self.set_tech_goal(goal_building, self.th_type, prod_building, 2, goal_unit)  # air tech
 
     # MACRO FOR DIFFERENT RACES:
 
@@ -1567,12 +1574,11 @@ class MyBot(sc2.BotAI):
         """General method to train available units in tech goals."""
         actions = []
         for goal in self.tech_goals:
-            if self.units.structure.ready.of_type(goal).amount > 0: #if we have building ready
+            if self.units.structure.ready.of_type(goal).amount > 0: #if the building is ready
                 unit = self.tech_goals[goal]["unit"]
                 action = await self.macro_bot.train_unit(goal, unit)
                 if action:
                     actions.extend(action)
-        # print(actions)
         return actions
 
     async def macro_boost(self):
@@ -1591,7 +1597,7 @@ class MyBot(sc2.BotAI):
         if self.minerals > 1200 and self.supply_used > 180 or self.race is not Race.Zerg:
             self.set_air_tech_goal()
 
-        if self.minerals > 1250 and self.race is not Race.Zerg:
+        if self.minerals > 1450 and self.race is not Race.Zerg:
             for goal in self.tech_goals:
                 if goal in {UnitTypeId.GATEWAY, UnitTypeId.WARPGATE, UnitTypeId.BARRACKS}:
                     if self.tech_goals[goal]["count"] < 10:
@@ -1599,7 +1605,7 @@ class MyBot(sc2.BotAI):
                 elif self.tech_goals[goal]["count"] < 3:
                     self.tech_goals[goal]["count"] += 1
 
-        if self.tech_switch and (self.minerals > 480 or self.supply_used < 60): #or self.known_enemy_units.amount >= 10):
+        if self.tech_switch and (self.minerals > 480 or self.supply_used < 60):  # or self.known_enemy_units.not_structure.amount >= 10):
             actions.extend(await self.macro_train_units())
 
         return actions
