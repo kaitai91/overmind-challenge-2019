@@ -15,7 +15,6 @@ class ProtossMacroBot(Race_macro):
     # GENERAL METHODS
     def __init__(self, controller):
         super().__init__(controller)
-        self.controller = controller
 
     async def train_unit(self, building_type, unit_type):
         controller = self.controller

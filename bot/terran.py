@@ -15,7 +15,6 @@ class TerranMacroBot(Race_macro):
     # GENERAL METHODS
     def __init__(self, controller):
         super().__init__(controller)
-        self.controller = controller
         self.__save_scans = 0
 
     async def train_unit(self, building_type, unit_type):
@@ -45,14 +44,18 @@ class TerranMacroBot(Race_macro):
             actions.append(a)
         if not controller.check_building_flag:
             actions.extend(self.continue_building())
-            actions.extend(await self.build_addons({UnitTypeId.BARRACKS}))  # build tech labs UnitTypeId.BARRACKSFLYING?
+            # actions.extend(await self.build_addons({UnitTypeId.BARRACKS}))  # build tech labs UnitTypeId.BARRACKSFLYING?
             controller.check_building_flag = 5
         return actions
 
     def early_tech(self):
         controller = self.controller
         # marines
-        controller.set_tech_goal(UnitTypeId.BARRACKS, controller.th_type, UnitTypeId.BARRACKS, 4, UnitTypeId.MARINE)
+        # controller.set_tech_goal(UnitTypeId.BARRACKS, controller.th_type, UnitTypeId.BARRACKS, 4, UnitTypeId.MARINE)
+
+        # marauders
+        controller.set_tech_goal(UnitTypeId.BARRACKSTECHLAB, controller.th_type, UnitTypeId.BARRACKS, 2, UnitTypeId.MARAUDER)
+
 
         # hellbats
         # controller.set_tech_goal(UnitTypeId.ARMORY, self.th_type, UnitTypeId.FACTORY, 2,
@@ -110,7 +113,6 @@ class TerranMacroBot(Race_macro):
     def drop_mules(self, mf=None, save_scans=None):
         """Drops mules from Orbital Commands to nearby mineral field."""
         controller = self.controller
-        # TODO: make possible to save more than 1 scan per oc (exact amounts)
         actions = []
         if not save_scans:
             save_scans = self.save_scans
@@ -120,6 +122,11 @@ class TerranMacroBot(Race_macro):
                     save_scans -= 1
                     if oc.energy < 100:
                         continue
+                    elif oc.energy < 150 and save_scans > 0:
+                        save_scans -= 1
+                        continue
+                    else:  # save max 2 scans in each orbital
+                        save_scans -= 1
                 mfs = controller.state.mineral_field.closer_than(10, oc)
                 if mfs:
                     mf = max(mfs, key=lambda x: x.mineral_contents)

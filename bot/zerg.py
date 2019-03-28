@@ -15,7 +15,6 @@ from bot.race_interface import Race_macro
 class ZergMacroBot(Race_macro):
     def __init__(self, controller):
         super().__init__(controller)
-        self.controller = controller
 
     async def train_unit(self, building_type, unit_type):
         controller = self.controller
