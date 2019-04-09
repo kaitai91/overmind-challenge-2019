@@ -10,9 +10,7 @@ class MicroBot:
     @staticmethod
     def lurker_micro(unit, enemy_units):
         enemy_ground_units = enemy_units.not_flying.closer_than(9 + MicroBot.r, unit)  # 9, not having range while unburrowed
-        # print(unit.ground_range)
         if enemy_ground_units.exists:
-            # print("ground unit spotted")
             if unit.is_burrowed:
                 if unit.weapon_cooldown == 0 and enemy_ground_units.exists:
                     enemy_ground_units = enemy_ground_units.sorted(lambda x: x.distance_to(unit))
@@ -52,18 +50,15 @@ class MicroBot:
     @staticmethod
     def tank_micro(unit, enemy_units):
         enemy_ground_units = enemy_units.not_flying
-        # enemy_colossi = enemy_ground_units.of_type(UnitTypeId.COLOSSUS).closer_than(11, unit)
         enemy_ground_units = enemy_ground_units.closer_than(11 + MicroBot.r, unit)
         too_close = enemy_ground_units.closer_than(3, unit)
-        # enemy_air_units = enemy_units.flying.closer_than(9, unit) or enemy_colossi
         if unit.type_id == UnitTypeId.SIEGETANKSIEGED:
             # if less than 3 in siege tank siege range (should always be positive integer)
             if enemy_ground_units.amount - too_close.amount < 3:
                 return unit(TRANSFORM[unit.type_id])  # unsiege
         else:
-            if enemy_ground_units.amount - too_close.amount >= 5 or too_close == 0 and enemy_ground_units.amount > 1: #siege if at least 5 in siege range
+            if enemy_ground_units.amount - too_close.amount >= 5 or (too_close == 0 and enemy_ground_units.amount > 1):
                 return unit(TRANSFORM[unit.type_id])  # siege
-
 
 
 # unit_type: micro_function
