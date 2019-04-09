@@ -4,14 +4,13 @@
 # Includes Townhalls, Production Buildings, Workers, Tech tree, and more
 # TODO: think whether text strings are sensible and maybe remove them
 # TODO: more consistent way of using variables vs functions
-# TODO: add upgrades (attack, armor, speed, stim...)
 
 from sc2 import Race
 from sc2.ids.unit_typeid import *
 from sc2.ids.ability_id import *
 from sc2.ids.upgrade_id import *
 
-#NOTE: race_workers,race_townhalls and race_gas available for bot (following three will complement the file)
+# NOTE: race_workers,race_townhalls and race_gas available for bot (following three will complement this file)
 TOWN_HALL_TYPES = {Race.Protoss: UnitTypeId.NEXUS, Race.Terran: UnitTypeId.COMMANDCENTER, Race.Zerg: UnitTypeId.HATCHERY}
 GAS_BUILDINGS = {Race.Protoss: UnitTypeId.ASSIMILATOR, Race.Terran: UnitTypeId.REFINERY, Race.Zerg: UnitTypeId.EXTRACTOR}
 WORKER_TYPES = {Race.Protoss: UnitTypeId.PROBE, Race.Terran: UnitTypeId.SCV, Race.Zerg: UnitTypeId.DRONE}
@@ -277,7 +276,7 @@ SPELL2 = {
 
 }
 SPELL3 = {
-    # protoss #TODO: different senty hallucinations (idea: sentry[UnitTypeId.Zealot: AbilityId.hallucination_zealot)
+    # protoss #TODO: different sentry hallucinations (idea: sentry[UnitTypeId.Zealot: AbilityId.hallucination_zealot)
     UnitTypeId.SENTRY: AbilityId.HALLUCINATION_PHOENIX, UnitTypeId.ORACLE: AbilityId.BEHAVIOR_PULSARBEAMON,
 
     # terran
@@ -320,14 +319,6 @@ def get_spells(type_id):
             break
     return available
 
-
-#protoss
-
-#terran
-
-#zerg
-
-##UPGRADES
 #TODO: test upgrades
 
 #protoss
