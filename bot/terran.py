@@ -7,10 +7,10 @@ from sc2.ids.ability_id import *
 from sc2 import position as position_imported
 
 import bot.id_map as id_map
-from bot.race_interface import Race_macro
+from bot.race_interface import RaceMacro
 
 
-class TerranMacroBot(Race_macro):
+class TerranMacroBot(RaceMacro):
 
     # GENERAL METHODS
     def __init__(self, controller):
@@ -82,10 +82,7 @@ class TerranMacroBot(Race_macro):
         buildings = controller.units.structure.not_ready.exclude_type(
             set(id_map.TECHLABS).union(id_map.REACTORS).union(id_map.TECHREACTORS))
         builders = controller.workers.filter(lambda w: w.is_constructing_scv)
-        # for b in builders:
-        #     print(f"{b.orders}")
-        # example:
-        # [UnitOrder(AbilityData(name=CommandCenter), x: 58.5 y: 149.5 , 0.0)]
+
         # TODO: maybe this can be optimized by checking if any building scv has order to build specific building
         #  this seems to be fine for now
         available = controller.workers.collecting
@@ -146,12 +143,10 @@ class TerranMacroBot(Race_macro):
         controller = self.controller
         if (controller.repair_flag or controller.workers.amount < 8) and not no_checks:  # dont repair if more income is needed
             return
-        # print("in do_repairs")
         if not scv:
             scvs = controller.workers.filter(lambda w: not w.is_constructing_scv)
             if scvs.amount > 0:
                 scv = scvs.random
-            # print(scv)
             else:
                 return
         if not target:
@@ -161,11 +156,8 @@ class TerranMacroBot(Race_macro):
                 targets = check_if_mechanical(targets).filter(lambda u: u.health_percentage < 1)
                 if targets.amount > 0:
                     target = targets[0]
-                    # print(target.health)
 
         if target and scv:
-            # autocast not available atm
-            # print(f"doing some repairs")
             controller.repair_flag = 1
             return scv.repair(target)
         else:
@@ -176,7 +168,6 @@ class TerranMacroBot(Race_macro):
         action = None
         if not location:
             if not building.is_flying:
-                # print("not flying")
                 can_place = await self.can_place_addon(building)
                 if can_place:
                     if reactor:
@@ -185,14 +176,6 @@ class TerranMacroBot(Race_macro):
                         action = building(id_map.BUILD_ADDONS[0])
                 else:
                     building(AbilityId.LIFT)
-            # else:  #not working
-            #     print("flying")
-            #     if reactor:
-            #         action = building(racial.BUILD_ADDONS[1])
-            #     else:
-            #         action = building(racial.BUILD_ADDONS[0])
-        # else: # to be implemented: (lift off, place addon to specified location - must be done in different steps)
-
         return action
 
     async def can_place_addon(self, building):

@@ -8,9 +8,10 @@ from sc2.ids.buff_id import *
 from sc2 import position as position_imported
 
 import bot.id_map as id_map
-from bot.race_interface import Race_macro
+from bot.race_interface import RaceMacro
 
-class ProtossMacroBot(Race_macro):
+
+class ProtossMacroBot(RaceMacro):
 
     # GENERAL METHODS
     def __init__(self, controller):
@@ -90,7 +91,7 @@ class ProtossMacroBot(Race_macro):
             return nexus(AbilityId.EFFECT_CHRONOBOOSTENERGYCOST, target)
 
     def spam_chronoboost(self, nexi=None, targets=None):
-        """Uses nexus chronoboosts on given targets."""
+        """Uses nexi chronoboosts on given targets."""
         controller = self.controller
 
         actions = []

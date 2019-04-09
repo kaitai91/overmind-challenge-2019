@@ -9,10 +9,10 @@ from sc2.ids.buff_id import *
 from sc2 import position as position_imported
 
 import bot.id_map as id_map
-from bot.race_interface import Race_macro
+from bot.race_interface import RaceMacro
 
 
-class ZergMacroBot(Race_macro):
+class ZergMacroBot(RaceMacro):
     def __init__(self, controller):
         super().__init__(controller)
 
@@ -89,8 +89,6 @@ class ZergMacroBot(Race_macro):
         pass
 
     # RACE SPECIFIC METHODS:
-
-    # following ones adopted (and modified) from hydralisk_push.py
 
     def queen_spawn(self, townhall):
         """Trains queen in given hatch/lair/hive."""
