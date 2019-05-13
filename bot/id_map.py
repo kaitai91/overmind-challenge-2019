@@ -1,16 +1,16 @@
 
-# Racial macro management module
+# Module for Id collections and management
 # (c) kaitai
 # Includes Townhalls, Production Buildings, Workers, Tech tree, and more
 # TODO: think whether text strings are sensible and maybe remove them
 # TODO: more consistent way of using variables vs functions
-# TODO: add upgrades (attack, armor, speed, stim...)
 
 from sc2 import Race
 from sc2.ids.unit_typeid import *
 from sc2.ids.ability_id import *
+from sc2.ids.upgrade_id import *
 
-#NOTE: race_workers,race_townhalls and race_gas available for bot (following three will complement the file)
+# NOTE: race_workers,race_townhalls and race_gas available for bot (following three will complement this file)
 TOWN_HALL_TYPES = {Race.Protoss: UnitTypeId.NEXUS, Race.Terran: UnitTypeId.COMMANDCENTER, Race.Zerg: UnitTypeId.HATCHERY}
 GAS_BUILDINGS = {Race.Protoss: UnitTypeId.ASSIMILATOR, Race.Terran: UnitTypeId.REFINERY, Race.Zerg: UnitTypeId.EXTRACTOR}
 WORKER_TYPES = {Race.Protoss: UnitTypeId.PROBE, Race.Terran: UnitTypeId.SCV, Race.Zerg: UnitTypeId.DRONE}
@@ -40,11 +40,28 @@ REACTORS = {UnitTypeId.BARRACKSREACTOR, UnitTypeId.FACTORYREACTOR,
             UnitTypeId.STARPORTREACTOR, UnitTypeId.REACTOR}
 TECHLABS = {UnitTypeId.BARRACKSTECHLAB, UnitTypeId.FACTORYTECHLAB,
             UnitTypeId.STARPORTTECHLAB, UnitTypeId.TECHLAB}
-TECHREACTORS = {UnitTypeId.TECHREACTOR, UnitTypeId.FACTORYTECHLAB,
+TECHREACTORS = {UnitTypeId.BARRACKSTECHREACTOR, UnitTypeId.FACTORYTECHLAB,
                 UnitTypeId.STARPORTTECHREACTOR, UnitTypeId.TECHREACTOR}
+
+ADDON_BUILDING = {
+    **dict.fromkeys([UnitTypeId.BARRACKSREACTOR, UnitTypeId.BARRACKSTECHLAB, UnitTypeId.BARRACKSTECHREACTOR],
+                    UnitTypeId.BARRACKS),
+    **dict.fromkeys([UnitTypeId.FACTORYREACTOR, UnitTypeId.FACTORYTECHLAB, UnitTypeId.FACTORYTECHREACTOR],
+                    UnitTypeId.FACTORY),
+    **dict.fromkeys([UnitTypeId.STARPORTREACTOR, UnitTypeId.STARPORTTECHLAB, UnitTypeId.STARPORTTECHREACTOR],
+                    UnitTypeId.STARPORT),
+
+}
+
 NEEDS_TECHLAB = {UnitTypeId.MARAUDER, UnitTypeId.GHOST,
                  UnitTypeId.SIEGETANK, UnitTypeId.THOR, UnitTypeId.CYCLONE,
                  UnitTypeId.RAVEN, UnitTypeId.BANSHEE, UnitTypeId.BATTLECRUISER}
+
+CREEP_TUMORS = {UnitTypeId.CREEPTUMOR, UnitTypeId.CREEPTUMORBURROWED,
+                UnitTypeId.CREEPTUMORMISSILE, UnitTypeId.CREEPTUMORQUEEN}
+CHANGELINGS = {UnitTypeId.CHANGELING, UnitTypeId.CHANGELINGZEALOT,
+               UnitTypeId.CHANGELINGMARINE, UnitTypeId.CHANGELINGMARINESHIELD,
+               UnitTypeId.CHANGELINGZERGLING, UnitTypeId.CHANGELINGZERGLINGWINGS}
 
 HATCHERY_UNITS = {"Larva": UnitTypeId.LARVA, "Queen": UnitTypeId.QUEEN}
 LARVA_UNITS = {"Drone": UnitTypeId.DRONE, "Overlord": UnitTypeId.OVERLORD, "Mutalisk": UnitTypeId.MUTALISK,
@@ -162,11 +179,14 @@ BUILDING_TECH_TREE = {
         },
         UnitTypeId.SUPPLYDEPOT: {
             UnitTypeId.BARRACKS: {
+                UnitTypeId.BARRACKSTECHLAB: None,
                 UnitTypeId.BUNKER: None,
                 UnitTypeId.FACTORY: {
+                    UnitTypeId.FACTORYTECHLAB: None,
                     UnitTypeId.ARMORY: None,
                     UnitTypeId.GHOSTACADEMY: None,
                     UnitTypeId.STARPORT: {
+                        UnitTypeId.STARPORTTECHLAB: None,
                         UnitTypeId.FUSIONCORE: None
                     },
                 },
@@ -256,7 +276,7 @@ SPELL2 = {
 
 }
 SPELL3 = {
-    # protoss #TODO: different senty hallucinations (idea: sentry[UnitTypeId.Zealot: AbilityId.hallucination_zealot)
+    # protoss #TODO: different sentry hallucinations (idea: sentry[UnitTypeId.Zealot: AbilityId.hallucination_zealot)
     UnitTypeId.SENTRY: AbilityId.HALLUCINATION_PHOENIX, UnitTypeId.ORACLE: AbilityId.BEHAVIOR_PULSARBEAMON,
 
     # terran
@@ -299,12 +319,114 @@ def get_spells(type_id):
             break
     return available
 
+#TODO: test upgrades
 
 #protoss
+P_AIR_ATTACK = {UpgradeId.PROTOSSAIRWEAPONSLEVEL1, UpgradeId.PROTOSSAIRWEAPONSLEVEL2, UpgradeId.PROTOSSAIRWEAPONSLEVEL3}
+P_AIR_ARMOR = {UpgradeId.PROTOSSAIRARMORSLEVEL1, UpgradeId.PROTOSSAIRARMORSLEVEL2, UpgradeId.PROTOSSAIRARMORSLEVEL3}
+P_AIR = {*P_AIR_ATTACK, *P_AIR_ARMOR}
+
+P_GROUND_ATTACK = {UpgradeId.PROTOSSGROUNDWEAPONSLEVEL1, UpgradeId.PROTOSSGROUNDWEAPONSLEVEL2, UpgradeId.PROTOSSGROUNDWEAPONSLEVEL3}
+P_GROUND_ARMOR = {UpgradeId.PROTOSSGROUNDARMORSLEVEL1, UpgradeId.PROTOSSGROUNDARMORSLEVEL2, UpgradeId.PROTOSSGROUNDARMORSLEVEL3}
+P_GROUND = {*P_GROUND_ATTACK, *P_GROUND_ARMOR}
+
+P_SHIELD_UPG = {UpgradeId.PROTOSSSHIELDSLEVEL1, UpgradeId.PROTOSSSHIELDSLEVEL2, UpgradeId.PROTOSSSHIELDSLEVEL3}
+WARPGATE = UpgradeId.WARPGATERESEARCH
 
 #terran
+T_VEHICLE_ATTACK = {UpgradeId.TERRANVEHICLEWEAPONSLEVEL1, UpgradeId.TERRANVEHICLEWEAPONSLEVEL2, UpgradeId.TERRANVEHICLEWEAPONSLEVEL3}
+T_SHIP_ATTACK = {UpgradeId.TERRANSHIPWEAPONSLEVEL1, UpgradeId.TERRANSHIPWEAPONSLEVEL2, UpgradeId.TERRANSHIPWEAPONSLEVEL3}
+T_PLATING = {UpgradeId.TERRANVEHICLEANDSHIPARMORSLEVEL1, UpgradeId.TERRANVEHICLEANDSHIPARMORSLEVEL2, UpgradeId.TERRANVEHICLEANDSHIPARMORSLEVEL3}
+
+T_INFANTRY_ATTACK = {UpgradeId.TERRANINFANTRYWEAPONSLEVEL1, UpgradeId.TERRANINFANTRYWEAPONSLEVEL2, UpgradeId.TERRANINFANTRYWEAPONSLEVEL3}
+T_INFANTRY_ARMOR = {UpgradeId.TERRANINFANTRYARMORSLEVEL1, UpgradeId.TERRANINFANTRYARMORSLEVEL2, UpgradeId.TERRANINFANTRYARMORSLEVEL3}
+BUILDING_UPGS = {UpgradeId.HISECAUTOTRACKING, UpgradeId.NEOSTEELFRAME}
 
 #zerg
+Z_MELEE_UPGS = {UpgradeId.ZERGMELEEWEAPONSLEVEL1, UpgradeId.ZERGMELEEWEAPONSLEVEL2, UpgradeId.ZERGMELEEWEAPONSLEVEL3}
+Z_MISSILE_UPGS = {UpgradeId.ZERGMISSILEWEAPONSLEVEL1, UpgradeId.ZERGMISSILEWEAPONSLEVEL2, UpgradeId.ZERGMISSILEWEAPONSLEVEL3}
+Z_CARAPACE_UPGS = {UpgradeId.ZERGGROUNDARMORSLEVEL1, UpgradeId.ZERGGROUNDARMORSLEVEL2, UpgradeId.ZERGGROUNDARMORSLEVEL3}
+
+Z_FLYER_ATTACK = {UpgradeId.ZERGFLYERWEAPONSLEVEL1, UpgradeId.ZERGFLYERWEAPONSLEVEL2, UpgradeId.ZERGFLYERWEAPONSLEVEL3}
+Z_FLYER_ARMOR = {UpgradeId.ZERGFLYERARMORSLEVEL1, UpgradeId.ZERGFLYERARMORSLEVEL2, UpgradeId.ZERGFLYERARMORSLEVEL3}
+BURROW_UPG = UpgradeId.BURROW
+# which unit benefits which upgrades:
+UNIT_UPGRADES = {
+
+    # protoss
+    UnitTypeId.PROBE: {}, UnitTypeId.ZEALOT: {UpgradeId.CHARGE},
+    UnitTypeId.ADEPT: {UpgradeId.ADEPTPIERCINGATTACK}, UnitTypeId.SENTRY: {},
+    UnitTypeId.STALKER: {UpgradeId.BLINKTECH}, UnitTypeId.DARKTEMPLAR: {UpgradeId.DARKTEMPLARBLINKUPGRADE},
+    UnitTypeId.HIGHTEMPLAR: {UpgradeId.PSISTORMTECH}, UnitTypeId.ARCHON: {},
+    UnitTypeId.WARPPRISM: {UpgradeId.GRAVITICDRIVE}, UnitTypeId.OBSERVER: {UpgradeId.OBSERVERGRAVITICBOOSTER},
+    UnitTypeId.IMMORTAL: {}, UnitTypeId.COLOSSUS: {UpgradeId.EXTENDEDTHERMALLANCE},
+    UnitTypeId.DISRUPTOR: {}, UnitTypeId.PHOENIX: {UpgradeId.PHOENIXRANGEUPGRADE},
+    UnitTypeId.VOIDRAY: {}, UnitTypeId.ORACLE: {},
+    UnitTypeId.CARRIER: {}, UnitTypeId.TEMPEST: {},
+    UnitTypeId.MOTHERSHIP: {},
+
+    # terran
+    UnitTypeId.SCV: {}, UnitTypeId.MARINE: {UpgradeId.STIMPACK, UpgradeId.SHIELDWALL},
+    UnitTypeId.REAPER: {}, UnitTypeId.MARAUDER: {UpgradeId.STIMPACK, UpgradeId.PUNISHERGRENADES},
+    UnitTypeId.GHOST: {UpgradeId.PERSONALCLOAKING},
+    # for different transformation modes of units:
+    **dict.fromkeys([UnitTypeId.HELLION, UnitTypeId.HELLIONTANK], {UpgradeId.INFERNALPREIGNITERS, UpgradeId.SMARTSERVOS}),
+    UnitTypeId.WIDOWMINE: {UpgradeId.DRILLCLAWS}, UnitTypeId.SIEGETANK: {},
+    UnitTypeId.CYCLONE: {UpgradeId.MAGFIELDLAUNCHERS},
+    **dict.fromkeys([UnitTypeId.THOR, UnitTypeId.VIKINGFIGHTER, UnitTypeId.VIKINGASSAULT], {UpgradeId.SMARTSERVOS}),
+    UnitTypeId.MEDIVAC: {UpgradeId.NAPALMFUELTANKS}, UnitTypeId.LIBERATOR: {UpgradeId.LIBERATORAGRANGEUPGRADE},
+    UnitTypeId.RAVEN: {UpgradeId.RAVENCORVIDREACTOR}, UnitTypeId.BATTLECRUISER: {UpgradeId.YAMATOCANNON},
+    UnitTypeId.BANSHEE: {UpgradeId.BANSHEECLOAK, UpgradeId.BANSHEESPEED},
+
+    # zerg
+    UnitTypeId.DRONE: {}, UnitTypeId.ZERGLING: {UpgradeId.ZERGLINGMOVEMENTSPEED, UpgradeId.ZERGLINGATTACKSPEED},
+    UnitTypeId.BANELING: {UpgradeId.CENTRIFICALHOOKS}, UnitTypeId.ROACH: {UpgradeId.GLIALRECONSTITUTION, UpgradeId.TUNNELINGCLAWS},
+    UnitTypeId.RAVAGER: {}, UnitTypeId.HYDRALISK: {UpgradeId.EVOLVEGROOVEDSPINES, UpgradeId.EVOLVEMUSCULARAUGMENTS},
+    UnitTypeId.LURKERMP: {UpgradeId.LURKERRANGE}, UnitTypeId.VIPER: {},
+    UnitTypeId.MUTALISK: {}, UnitTypeId.CORRUPTOR: {},
+    UnitTypeId.SWARMHOSTMP: {}, UnitTypeId.INFESTOR: {UpgradeId.INFESTORENERGYUPGRADE, UpgradeId.NEURALPARASITE},
+    UnitTypeId.ULTRALISK: {UpgradeId.CHITINOUSPLATING,  UpgradeId.ANABOLICSYNTHESIS}, UnitTypeId.BROODLORD: {},
+    **dict.fromkeys([UnitTypeId.OVERLORD, UnitTypeId.OVERSEER], {UpgradeId.OVERLORDSPEED}),
+    UnitTypeId.QUEEN: {},
+
+}
+
+# from which building the upgrade is researched
+UPGRADING_BUILDING = {
+
+    # protoss
+    **dict.fromkeys([*P_GROUND, *P_SHIELD_UPG], UnitTypeId.FORGE),
+    **dict.fromkeys([*P_AIR, UpgradeId.WARPGATERESEARCH], UnitTypeId.CYBERNETICSCORE),
+    **dict.fromkeys([UpgradeId.OBSERVERGRAVITICBOOSTER, UpgradeId.GRAVITICDRIVE, UpgradeId.EXTENDEDTHERMALLANCE], UnitTypeId.ROBOTICSBAY),
+    **dict.fromkeys([UpgradeId.PHOENIXRANGEUPGRADE, ], {UnitTypeId.FLEETBEACON}),
+    **dict.fromkeys([UpgradeId.CHARGE, UpgradeId.BLINKTECH, UpgradeId.ADEPTPIERCINGATTACK], UnitTypeId.TWILIGHTCOUNCIL),
+    **dict.fromkeys([UpgradeId.PSISTORMTECH, ], UnitTypeId.TEMPLARARCHIVE),
+    **dict.fromkeys([UpgradeId.DARKTEMPLARBLINKUPGRADE, ], UnitTypeId.DARKSHRINE),
+
+    # terran
+    **dict.fromkeys([UpgradeId.SHIELDWALL, UpgradeId.STIMPACK, UpgradeId.PUNISHERGRENADES], UnitTypeId.BARRACKSTECHLAB),
+    **dict.fromkeys([UpgradeId.INFERNALPREIGNITERS, UpgradeId.MAGFIELDLAUNCHERS, UpgradeId.DRILLCLAWS,
+                     UpgradeId.SMARTSERVOS], UnitTypeId.FACTORYTECHLAB),
+    **dict.fromkeys([*T_VEHICLE_ATTACK, *T_SHIP_ATTACK, *T_PLATING], UnitTypeId.ARMORY),
+    **dict.fromkeys([UpgradeId.PERSONALCLOAKING, ], UnitTypeId.GHOSTACADEMY),
+    **dict.fromkeys([UpgradeId.NAPALMFUELTANKS, UpgradeId.RAVENCORVIDREACTOR, UpgradeId.BANSHEECLOAK,
+                     UpgradeId.BANSHEESPEED, UpgradeId.LIBERATORAGRANGEUPGRADE], UnitTypeId.STARPORTTECHLAB),
+    **dict.fromkeys([UpgradeId.YAMATOCANNON, ], UnitTypeId.FUSIONCORE),
+
+    # zerg
+    **dict.fromkeys([UpgradeId.OVERLORDSPEED, UpgradeId.BURROW], UnitTypeId.HATCHERY),
+    **dict.fromkeys([*Z_MELEE_UPGS, *Z_MISSILE_UPGS, *Z_CARAPACE_UPGS], UnitTypeId.EVOLUTIONCHAMBER),
+    **dict.fromkeys([UpgradeId.ZERGLINGMOVEMENTSPEED, UpgradeId.ZERGLINGATTACKSPEED], UnitTypeId.SPAWNINGPOOL),
+    **dict.fromkeys([UpgradeId.CENTRIFICALHOOKS, ], UnitTypeId.BANELINGNEST),
+    **dict.fromkeys([UpgradeId.GLIALRECONSTITUTION, UpgradeId.TUNNELINGCLAWS], UnitTypeId.ROACHWARREN),
+    **dict.fromkeys([UpgradeId.EVOLVEGROOVEDSPINES, UpgradeId.EVOLVEMUSCULARAUGMENTS], UnitTypeId.HYDRALISKDEN),
+    **dict.fromkeys([UpgradeId.LURKERRANGE, ], UnitTypeId.LURKERDENMP),
+    **dict.fromkeys([*Z_FLYER_ATTACK, *Z_FLYER_ARMOR], UnitTypeId.SPIRE),
+    **dict.fromkeys([UpgradeId.INFESTORENERGYUPGRADE, UpgradeId.NEURALPARASITE], UnitTypeId.INFESTATIONPIT),
+    **dict.fromkeys([UpgradeId.CHITINOUSPLATING, UpgradeId.ANABOLICSYNTHESIS], UnitTypeId.ULTRALISKCAVERN),
+
+}
+
 
 ####ACTIONS
 
@@ -342,13 +464,14 @@ def goal_air_unit(race):
 def get_supply_args(race):
     """Returns arguments which can be provided to increase supply count."""
     if race == Race.Protoss:
-        return (UnitTypeId.PROBE, UnitTypeId.PYLON)
+        return UnitTypeId.PROBE, UnitTypeId.PYLON
     elif race == Race.Terran:
-        return (UnitTypeId.SCV, UnitTypeId.SUPPLYDEPOT)
+        return UnitTypeId.SCV, UnitTypeId.SUPPLYDEPOT
     elif race == Race.Zerg:
-        return (UnitTypeId.LARVA, UnitTypeId.OVERLORD)
+        return UnitTypeId.LARVA, UnitTypeId.OVERLORD
 
     return None
+
 
 def supply_building_time(race):
     """Returns ingame time required for supply units to be built/trained."""
@@ -356,6 +479,7 @@ def supply_building_time(race):
         return 21  # ingame seconds
     else:
         return 18
+
 
 # example: get_available_buildings(Race.Protoss,[UnitTypeId.NEXUS, UnitTypeId.GATEWAY])
 def get_available_buildings(race, buildings_ready):
@@ -378,7 +502,6 @@ def search_tree(dict_tree, keys):
     return found_keys
 
 
-#returns tech path for given building or none if no tech path available/defined
 def get_tech_path_needed(race, building):
     """Returns tech path for given building or none if no tech path available/defined."""
     tree = BUILDING_TECH_TREE[race]
@@ -389,8 +512,6 @@ def get_tech_path_needed(race, building):
         return None
 
 
-# recursive tree search "path to key"
-# return path includes given key if path was found
 # returns 2 GREATERSPIREs since it has two required tech paths
 def search_path(dict_tree, key):
     """Returns if the path is found and path to the key in dictionary search tree."""

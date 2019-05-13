@@ -6,21 +6,20 @@ from sc2.ids.unit_typeid import *
 from sc2.ids.ability_id import *
 from sc2 import position as position_imported
 
-import bot.racial as racial
-from bot.race_interface import Race_macro
+import bot.id_map as id_map
+from bot.race_interface import RaceMacro
 
 
-class TerranMacroBot(Race_macro):
+class TerranMacroBot(RaceMacro):
 
     # GENERAL METHODS
     def __init__(self, controller):
         super().__init__(controller)
-        self.controller = controller
         self.__save_scans = 0
 
     async def train_unit(self, building_type, unit_type):
         facility = self.controller.tech_goals[building_type]["prod"]
-        if unit_type not in racial.NEEDS_TECHLAB:
+        if unit_type not in id_map.NEEDS_TECHLAB:
             action = self.controller.train_units(facility, unit_type)
         else:
             buildings = self.controller.units.structure.of_type(facility).noqueue.filter(lambda st: st.add_on_tag != 0)
@@ -45,14 +44,18 @@ class TerranMacroBot(Race_macro):
             actions.append(a)
         if not controller.check_building_flag:
             actions.extend(self.continue_building())
-            actions.extend(await self.build_addons({UnitTypeId.BARRACKS}))  # build tech labs UnitTypeId.BARRACKSFLYING?
+            # actions.extend(await self.build_addons({UnitTypeId.BARRACKS}))  # build tech labs UnitTypeId.BARRACKSFLYING?
             controller.check_building_flag = 5
         return actions
 
     def early_tech(self):
         controller = self.controller
         # marines
-        controller.set_tech_goal(UnitTypeId.BARRACKS, controller.th_type, UnitTypeId.BARRACKS, 4, UnitTypeId.MARINE)
+        # controller.set_tech_goal(UnitTypeId.BARRACKS, controller.th_type, UnitTypeId.BARRACKS, 4, UnitTypeId.MARINE)
+
+        # marauders
+        controller.set_tech_goal(UnitTypeId.BARRACKSTECHLAB, controller.th_type, UnitTypeId.BARRACKS, 2, UnitTypeId.MARAUDER)
+
 
         # hellbats
         # controller.set_tech_goal(UnitTypeId.ARMORY, self.th_type, UnitTypeId.FACTORY, 2,
@@ -77,12 +80,9 @@ class TerranMacroBot(Race_macro):
         controller = self.controller
         actions = []
         buildings = controller.units.structure.not_ready.exclude_type(
-            set(racial.TECHLABS).union(racial.REACTORS).union(racial.TECHREACTORS))
+            set(id_map.TECHLABS).union(id_map.REACTORS).union(id_map.TECHREACTORS))
         builders = controller.workers.filter(lambda w: w.is_constructing_scv)
-        # for b in builders:
-        #     print(f"{b.orders}")
-        # example:
-        # [UnitOrder(AbilityData(name=CommandCenter), x: 58.5 y: 149.5 , 0.0)]
+
         # TODO: maybe this can be optimized by checking if any building scv has order to build specific building
         #  this seems to be fine for now
         available = controller.workers.collecting
@@ -110,7 +110,6 @@ class TerranMacroBot(Race_macro):
     def drop_mules(self, mf=None, save_scans=None):
         """Drops mules from Orbital Commands to nearby mineral field."""
         controller = self.controller
-        # TODO: make possible to save more than 1 scan per oc (exact amounts)
         actions = []
         if not save_scans:
             save_scans = self.save_scans
@@ -120,6 +119,11 @@ class TerranMacroBot(Race_macro):
                     save_scans -= 1
                     if oc.energy < 100:
                         continue
+                    elif oc.energy < 150 and save_scans > 0:
+                        save_scans -= 1
+                        continue
+                    else:  # save max 2 scans in each orbital
+                        save_scans -= 1
                 mfs = controller.state.mineral_field.closer_than(10, oc)
                 if mfs:
                     mf = max(mfs, key=lambda x: x.mineral_contents)
@@ -139,12 +143,10 @@ class TerranMacroBot(Race_macro):
         controller = self.controller
         if (controller.repair_flag or controller.workers.amount < 8) and not no_checks:  # dont repair if more income is needed
             return
-        # print("in do_repairs")
         if not scv:
             scvs = controller.workers.filter(lambda w: not w.is_constructing_scv)
             if scvs.amount > 0:
                 scv = scvs.random
-            # print(scv)
             else:
                 return
         if not target:
@@ -154,11 +156,8 @@ class TerranMacroBot(Race_macro):
                 targets = check_if_mechanical(targets).filter(lambda u: u.health_percentage < 1)
                 if targets.amount > 0:
                     target = targets[0]
-                    # print(target.health)
 
         if target and scv:
-            # autocast not available atm
-            # print(f"doing some repairs")
             controller.repair_flag = 1
             return scv.repair(target)
         else:
@@ -169,23 +168,14 @@ class TerranMacroBot(Race_macro):
         action = None
         if not location:
             if not building.is_flying:
-                # print("not flying")
                 can_place = await self.can_place_addon(building)
                 if can_place:
                     if reactor:
-                        action = building(racial.BUILD_ADDONS[1])
+                        action = building(id_map.BUILD_ADDONS[1])
                     else:
-                        action = building(racial.BUILD_ADDONS[0])
+                        action = building(id_map.BUILD_ADDONS[0])
                 else:
                     building(AbilityId.LIFT)
-            # else:  #not working
-            #     print("flying")
-            #     if reactor:
-            #         action = building(racial.BUILD_ADDONS[1])
-            #     else:
-            #         action = building(racial.BUILD_ADDONS[0])
-        # else: # to be implemented: (lift off, place addon to specified location - must be done in different steps)
-
         return action
 
     async def can_place_addon(self, building):
@@ -226,5 +216,5 @@ def check_if_mechanical(unit_list):
     """Returns repairable (Terran) units and structures in given list."""
 
     is_mech = unit_list.structure
-    is_mech.extend(unit_list.not_structure.of_type(racial.MECHANICALS))
+    is_mech.extend(unit_list.not_structure.of_type(id_map.MECHANICALS))
     return is_mech

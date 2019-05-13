@@ -4,10 +4,12 @@
 import abc
 from abc import abstractmethod
 
-class Race_macro(abc.ABC):
+
+class RaceMacro(abc.ABC):
 
     def __init__(self, controller):
         super().__init__()
+        self.controller = controller
 
     @abstractmethod
     def train_unit(self, building_typeID, unit_typeID):
