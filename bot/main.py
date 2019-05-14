@@ -74,6 +74,7 @@ class MyBot(sc2.BotAI):
         self.attacking_enemy_units = []
 
         self.clock = 0
+        self.iteration = -1
 
         # flags
         self.d_task = False #demanding task
@@ -148,15 +149,7 @@ class MyBot(sc2.BotAI):
         else:  # self.race == Race.Zerg:
             self.macro_bot = zerg.ZergMacroBot(self)
 
-
-    async def on_step(self, iteration):
-        """Make bot's move(s) here - run periodically."""
-
-        #helper vars
-        actions = []
-
-        self.iteration = iteration
-
+    def _on_step_update_timers(self):
         clock_diff = self.get_time_in_seconds() - self.clock
         self.clock = self.get_time_in_seconds()
 
@@ -168,39 +161,22 @@ class MyBot(sc2.BotAI):
         self.w_dist_flag = max(0, self.w_dist_flag - clock_diff)
         self.tech_flag = max(0, self.tech_flag - clock_diff)
         self.racial_macro_flag = max(0, self.racial_macro_flag - clock_diff)
-        self.repair_flag = max(0, self.repair_flag-clock_diff)
-        self.check_building_flag = max(0, self.check_building_flag-clock_diff)
+        self.repair_flag = max(0, self.repair_flag - clock_diff)
+        self.check_building_flag = max(0, self.check_building_flag - clock_diff)
         # self.reset_expansion_cache_flag = max(0, self.reset_expansion_cache_flag-clock_diff)
 
-        # Reinforce defence
-        self.enemy_att_str_prev = self.enemy_att_str_curr.copy()
-        self.enemy_att_str_curr = self.calc_enemy_att_str()
-        enemy_att_got_stronger = self.enemy_att_str_max["hp"] < self.enemy_att_str_curr["hp"] and \
-                                self.enemy_att_str_max["g_dps"] < self.enemy_att_str_curr["g_dps"]
+        return clock_diff
 
-        enemy_is_as_strong = self.enemy_att_str_max["hp"] <= self.enemy_att_str_curr["hp"] and \
-                                self.enemy_att_str_max["g_dps"] <= self.enemy_att_str_curr["g_dps"]
+    async def on_step(self, iteration):
+        """Make bot's move(s) here - run periodically."""
 
-        if enemy_att_got_stronger:
-            self.enemy_att_str_save = 20
+        #helper vars
+        actions = []
+        if iteration == self.iteration:
+            print(f"Duplicate iterations @ time {self.clock}")
+        self.iteration = iteration
 
-        if not self.enemy_att_str_save:
-            #never erase enemy last position (where they did attack last time)
-            self.enemy_att_str_max = {"hp": 0, "g_dps": 0, "pos": self.enemy_att_str_max["pos"]}
-
-        c = self.enemy_att_str_curr
-        p = self.enemy_att_str_prev
-        m = self.enemy_att_str_max
-        self.enemy_att_str_max["hp"] = max(c["hp"], p["hp"], m["hp"])
-        self.enemy_att_str_max["g_dps"] = max(c["g_dps"], p["g_dps"], m["g_dps"])
-        if c["pos"]:
-            self.enemy_att_str_max["pos"] = c["pos"]  # use most recent position
-
-        # if enemy_att_got_stronger:
-        if m["pos"]:
-            ar = self.reinforce_defence()
-            if ar:
-                actions.extend(ar)
+        clock_diff = self._on_step_update_timers()
 
         if self.supply_left < self.townhalls.ready.amount and not self.pend_supply_flag and self.supply_cap < 200:
             self.pend_supply_flag = 1
@@ -209,6 +185,9 @@ class MyBot(sc2.BotAI):
 
         #USUAL TASKS
 
+        rf_action = self.update_enemy_att_str()
+        if rf_action:  # reinforce defence if needed
+            actions.extend(rf_action)
 
         # check if it's time to expand
         if self.clock >= 45 and not self.expand_flag and self.minerals > 250 and self.workers.ready.amount > 0:
@@ -495,6 +474,18 @@ class MyBot(sc2.BotAI):
 
         return closest
 
+    # try using all_units=True by default
+    def already_pending(self, unit_type, all_units=True) -> int:
+        """
+        Returns a number of buildings or units already in progress, or if a
+        worker is en route to build it. This also includes queued orders for
+        workers and build queues of buildings.
+
+        If all_units==True, then build queues of other units (such as Carriers
+        (Interceptors) or Oracles (Stasis Ward)) are also included.
+        """
+        return super().already_pending(unit_type, all_units)
+
     def adjust_worker_limit(self):
         """Sets preferred worker amount depending on owned expansions."""
         self.worker_limit = max(24, min(len(self.owned_expansions) * 24, 88))
@@ -747,6 +738,37 @@ class MyBot(sc2.BotAI):
                 del (self.attack_force_tags[tg])
         for tg in set(self.def_force_tags.keys()).intersection(self.attack_force_tags):
             del (self.attack_force_tags[tg])
+
+    def update_enemy_att_str(self):
+        # Reinforce defence
+        self.enemy_att_str_prev = self.enemy_att_str_curr.copy()
+        self.enemy_att_str_curr = self.calc_enemy_att_str()
+        enemy_att_got_stronger = self.enemy_att_str_max["hp"] < self.enemy_att_str_curr["hp"] and \
+                                 self.enemy_att_str_max["g_dps"] < self.enemy_att_str_curr["g_dps"]
+
+        enemy_is_as_strong = self.enemy_att_str_max["hp"] <= self.enemy_att_str_curr["hp"] and \
+                             self.enemy_att_str_max["g_dps"] <= self.enemy_att_str_curr["g_dps"]
+
+        if enemy_att_got_stronger:
+            self.enemy_att_str_save = 20
+
+        if not self.enemy_att_str_save:
+            # never erase enemy last position (where they did attack last time)
+            self.enemy_att_str_max = {"hp": 0, "g_dps": 0, "pos": self.enemy_att_str_max["pos"]}
+
+        c = self.enemy_att_str_curr
+        p = self.enemy_att_str_prev
+        m = self.enemy_att_str_max
+        self.enemy_att_str_max["hp"] = max(c["hp"], p["hp"], m["hp"])
+        self.enemy_att_str_max["g_dps"] = max(c["g_dps"], p["g_dps"], m["g_dps"])
+        if c["pos"]:
+            self.enemy_att_str_max["pos"] = c["pos"]  # use most recent position
+
+        # if enemy_att_got_stronger:
+        if m["pos"]:
+            return self.reinforce_defence()
+
+        return None
 
     def reinforce_defence(self):
         """Reinforces defence if there is an attack incoming.
@@ -1476,15 +1498,15 @@ class MyBot(sc2.BotAI):
     async def macro_boost(self):
         """General method for repetitive macro tasks."""
         actions = []
-        if isinstance(self.macro_bot, terran.TerranMacroBot) \
-                and self.get_time_in_seconds() > 600 \
-                and self.macro_bot.save_scans != 2:
-            curr = self.macro_bot.save_scans
-            self.macro_bot.save_scans = 2
-            new = self.macro_bot.save_scans
-            if curr != new:
-                print(f"Saving scans changed --> prev: {curr}, new {new}")
-        actions.extend(await self.macro_bot.general_macro())
+        # if isinstance(self.macro_bot, terran.TerranMacroBot) \
+        #         and self.get_time_in_seconds() > 600 \
+        #         and self.macro_bot.save_scans != 2:
+        #     curr = self.macro_bot.save_scans
+        #     self.macro_bot.save_scans = 2
+        #     new = self.macro_bot.save_scans
+        #     if curr != new:
+        #         print(f"Saving scans changed --> prev: {curr}, new {new}")
+        # actions.extend(await self.macro_bot.general_macro())
 
         if self.minerals > 1200 and self.supply_used > 180 or self.race is not Race.Zerg:
             self.set_air_tech_goal()
