@@ -2,6 +2,7 @@
 # (c) kaitai
 
 
+from sc2 import Race
 from sc2.ids.unit_typeid import *
 from sc2.ids.ability_id import *
 from sc2 import position as position_imported
@@ -50,11 +51,12 @@ class TerranMacroBot(RaceMacro):
 
     def early_tech(self):
         controller = self.controller
-        # marines
-        # controller.set_tech_goal(UnitTypeId.BARRACKS, controller.th_type, UnitTypeId.BARRACKS, 4, UnitTypeId.MARINE)
-
-        # marauders
-        controller.set_tech_goal(UnitTypeId.BARRACKSTECHLAB, controller.th_type, UnitTypeId.BARRACKS, 2, UnitTypeId.MARAUDER)
+        if controller.enemy_race is not Race.Protoss:
+            # marines
+            controller.set_tech_goal(UnitTypeId.BARRACKS, controller.th_type, UnitTypeId.BARRACKS, 3, UnitTypeId.MARINE)
+        else:
+            # marauders
+            controller.set_tech_goal(UnitTypeId.BARRACKSTECHLAB, controller.th_type, UnitTypeId.BARRACKS, 2, UnitTypeId.MARAUDER)
 
 
         # hellbats
@@ -62,7 +64,7 @@ class TerranMacroBot(RaceMacro):
         #                    UnitTypeId.HELLIONTANK)
 
         # tanks
-        controller.set_tech_goal(UnitTypeId.FACTORY, controller.th_type, UnitTypeId.FACTORY, 2,
+        controller.set_tech_goal(UnitTypeId.FACTORY, controller.th_type, UnitTypeId.FACTORY, 1,
                                  UnitTypeId.SIEGETANK)
 
     def mid_tech(self):
