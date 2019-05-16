@@ -632,6 +632,7 @@ class MyBot(sc2.BotAI):
             shortest_dist = self.units.closest_distance_to(self.enemy_start_locations[0])
             if shortest_dist <= 2:
                 # print("killed enemy starting base")
+                await self.chat_send(f"You can run, but You can't hide! (devil)")
                 self.killed_start_base = 1
 
         if self.supply_used - self.workers.amount > 6 and not self.attack_flag and \
@@ -680,13 +681,11 @@ class MyBot(sc2.BotAI):
                     tags_not_in(set(self.def_force_tags.keys()).union(set(self.attack_force_tags.keys())))
                 if army.amount > 8:
                     group_size = min(25, max(4, army.amount))  # groups of 4-20 units to scout enemy
-                    await self.chat_send(f"You can run, but You can't hide! (devil)")
                     random_scout_squad = army.prefer_close_to(target)[:group_size]
                     attack_actions.extend(self.issue_group_attack(random_scout_squad, target))
 
                 elif self.workers.amount > 15:
                     group_size = max(4, int(self.workers.amount * 0.25) + 1)
-                    await self.chat_send(f"You can run, but You can't hide! (devil)")
                     random_scout_squad = self.workers.filter(lambda w: not w.is_constructing_scv). \
                                              prefer_close_to(target)[:group_size]
                     attack_actions.extend(self.issue_group_attack(random_scout_squad, target))
