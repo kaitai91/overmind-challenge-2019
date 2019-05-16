@@ -261,7 +261,7 @@ class MyBot(sc2.BotAI):
         if len(self.def_force_tags) > 0 and (min(0.1, clock_diff) <= (self.clock - int(self.clock))):
             await self.defend_unit_micro()
 
-        if int(self.clock) % 91 == 57 and clock_diff >= self.clock-int(self.clock)and self.clock > 222:
+        if int(self.clock) % 157 == 91 and clock_diff >= self.clock-int(self.clock)and self.clock > 222:
             await self.chat_send(f"Elapsed game time: {int(self.clock/60)} min, {int(self.clock)%60}s")
 
         actions.extend(await self.do_attack_decisions())
@@ -367,7 +367,7 @@ class MyBot(sc2.BotAI):
             self.expand_flag = 5
             if self.already_pending(self.th_type) < 3:  # expand "only" 3 locations at once
                 await self.expand_now(closest_to=self.workers.random.position)
-                if self.townhalls.amount < 3:
+                if self.townhalls.amount < 3 and self.get_time_in_seconds() < 300:
                     await self.chat_send(f"Let's expand! (flex)")
         # not yet
         else:
