@@ -74,6 +74,7 @@ class MyBot(sc2.BotAI):
         self.attacking_enemy_units = []
 
         self.clock = 0
+        self.iteration = -1
 
         # flags
         self.d_task = False #demanding task
@@ -120,7 +121,7 @@ class MyBot(sc2.BotAI):
         # self.expansion_locations = [] #in super, not needed here
 
     def _prepare_first_step(self):
-        self.expansion_locations  # pre calculate locations
+        # self.expansion_locations()  # pre calculate locations
         return super()._prepare_first_step()
 
     def set_tech_goal(self, goal_tech, current_tech, goal_prod_building, prod_b_count, goal_unit):
@@ -148,15 +149,7 @@ class MyBot(sc2.BotAI):
         else:  # self.race == Race.Zerg:
             self.macro_bot = zerg.ZergMacroBot(self)
 
-
-    async def on_step(self, iteration):
-        """Make bot's move(s) here - run periodically."""
-
-        #helper vars
-        actions = []
-
-        self.iteration = iteration
-
+    def _on_step_update_timers(self):
         clock_diff = self.get_time_in_seconds() - self.clock
         self.clock = self.get_time_in_seconds()
 
@@ -168,39 +161,22 @@ class MyBot(sc2.BotAI):
         self.w_dist_flag = max(0, self.w_dist_flag - clock_diff)
         self.tech_flag = max(0, self.tech_flag - clock_diff)
         self.racial_macro_flag = max(0, self.racial_macro_flag - clock_diff)
-        self.repair_flag = max(0, self.repair_flag-clock_diff)
-        self.check_building_flag = max(0, self.check_building_flag-clock_diff)
+        self.repair_flag = max(0, self.repair_flag - clock_diff)
+        self.check_building_flag = max(0, self.check_building_flag - clock_diff)
         # self.reset_expansion_cache_flag = max(0, self.reset_expansion_cache_flag-clock_diff)
 
-        # Reinforce defence
-        self.enemy_att_str_prev = self.enemy_att_str_curr.copy()
-        self.enemy_att_str_curr = self.calc_enemy_att_str()
-        enemy_att_got_stronger = self.enemy_att_str_max["hp"] < self.enemy_att_str_curr["hp"] and \
-                                self.enemy_att_str_max["g_dps"] < self.enemy_att_str_curr["g_dps"]
+        return clock_diff
 
-        enemy_is_as_strong = self.enemy_att_str_max["hp"] <= self.enemy_att_str_curr["hp"] and \
-                                self.enemy_att_str_max["g_dps"] <= self.enemy_att_str_curr["g_dps"]
+    async def on_step(self, iteration):
+        """Make bot's move(s) here - run periodically."""
 
-        if enemy_att_got_stronger:
-            self.enemy_att_str_save = 20
+        #helper vars
+        actions = []
+        if iteration == self.iteration:
+            print(f"Duplicate iterations @ time {self.clock}")
+        self.iteration = iteration
 
-        if not self.enemy_att_str_save:
-            #never erase enemy last position (where they did attack last time)
-            self.enemy_att_str_max = {"hp": 0, "g_dps": 0, "pos": self.enemy_att_str_max["pos"]}
-
-        c = self.enemy_att_str_curr
-        p = self.enemy_att_str_prev
-        m = self.enemy_att_str_max
-        self.enemy_att_str_max["hp"] = max(c["hp"], p["hp"], m["hp"])
-        self.enemy_att_str_max["g_dps"] = max(c["g_dps"], p["g_dps"], m["g_dps"])
-        if c["pos"]:
-            self.enemy_att_str_max["pos"] = c["pos"]  # use most recent position
-
-        # if enemy_att_got_stronger:
-        if m["pos"]:
-            ar = self.reinforce_defence()
-            if ar:
-                actions.extend(ar)
+        clock_diff = self._on_step_update_timers()
 
         if self.supply_left < self.townhalls.ready.amount and not self.pend_supply_flag and self.supply_cap < 200:
             self.pend_supply_flag = 1
@@ -209,6 +185,9 @@ class MyBot(sc2.BotAI):
 
         #USUAL TASKS
 
+        rf_action = self.update_enemy_att_str()
+        if rf_action:  # reinforce defence if needed
+            actions.extend(rf_action)
 
         # check if it's time to expand
         if self.clock >= 45 and not self.expand_flag and self.minerals > 250 and self.workers.ready.amount > 0:
@@ -243,6 +222,7 @@ class MyBot(sc2.BotAI):
                 await self.check_and_build_gas() #add extra gas if gas-starving
 
         # bot is ready to start teching up
+        supply_pending = 0
         if self.tech_switch:
             # set desired amount of workers based on # of expansion (in between 24, 88)
             self.adjust_worker_limit()
@@ -256,15 +236,18 @@ class MyBot(sc2.BotAI):
                         else:
                             if not self.already_pending(UnitTypeId.PYLON):
                                 await self.build_supply()
+                                supply_pending = 1
                     else:
                         for tech in self.tech_goals:
                             await self.manage_tech(tech)
                     self.tech_flag = 5
 
-        await self.build_supply()
+        if not supply_pending:
+            await self.build_supply()
+
         if self.pend_supply_flag != 1:
             if self.workers.amount < (self.worker_limit - self.townhalls.amount):
-                await self.train_workers()
+                actions.extend(await self.train_workers())
 
 
         # FOR MICRO
@@ -278,74 +261,20 @@ class MyBot(sc2.BotAI):
         if len(self.def_force_tags) > 0 and (min(0.1, clock_diff) <= (self.clock - int(self.clock))):
             await self.defend_unit_micro()
 
-        if int(self.clock) % 91 == 57 and clock_diff >= self.clock-int(self.clock)and self.clock > 222:
+        if int(self.clock) % 157 == 91 and clock_diff >= self.clock-int(self.clock)and self.clock > 222:
             await self.chat_send(f"Elapsed game time: {int(self.clock/60)} min, {int(self.clock)%60}s")
 
-        # killed_base is here, since not used anywhere else.. move if needed
-        if not self.killed_start_base:
-            shortest_dist = self.units.closest_distance_to(self.enemy_start_locations[0])
-            if shortest_dist <= 2:
-                # print("killed enemy starting base")
-                self.killed_start_base = 1
-
-        if self.supply_used - self.workers.amount > 6 and not self.attack_flag and \
-                ((len(self.attack_force_tags)+len(self.def_force_tags)) <
-                 (self.units.not_structure.not_flying.amount/2 + 1)):
-
-            # set new attack_flag
-            enemy_buildings = self.known_enemy_structures().not_flying.exclude_type(id_map.CREEP_TUMORS)
-            if not self.killed_start_base:
-                target = self.enemy_start_locations[0]
-                if enemy_buildings.amount > 0:
-                    target = enemy_buildings.closest_to(self.townhalls.random.position).position
-                self.attack_flag = 120  # seconds
-            elif enemy_buildings.amount > 0:
-                target = self.known_enemy_structures.not_flying[0].position
-                self.attack_flag = 60  # seconds
-            else:
-                possible_targets = list(self.expansion_locations.keys())
-                number = len(possible_targets)
-                target = possible_targets[self.killed_start_base % number]
-                self.killed_start_base += 1
-                #LCM for base counts 4-13 = 360360
-                if self.killed_start_base > 360360*2:#<-not realistic to happen :D
-                    self.killed_start_base %= 360360
-                self.attack_flag = 10  # seconds
-
-            # attack based on new attack flag
-            if self.attack_flag > 20:
-                army = self.units.not_structure.exclude_type([self.w_type, UnitTypeId.OVERLORD, UnitTypeId.MULE, UnitTypeId.QUEEN])
-                actions.extend(self.issue_group_attack(army, target))
-                if army.amount > 4:
-                    actions.extend(self.issue_group_attack(army, target))
-
-                excess_workers = self.workers.amount - min(len(self.owned_expansions) * 29 + 1, 89)
-                if excess_workers > 0 and self.workers.amount > 0:
-                    actions.extend(self.issue_worker_attack(target, (excess_workers / self.workers.amount)))
-
-            else:  # scout attack location
-                army = self.units.not_structure.exclude_type([self.w_type, UnitTypeId.OVERLORD, UnitTypeId.MULE, UnitTypeId.QUEEN])
-                if army.amount > 8:
-                    group_size = max(4, army.amount)
-                    await self.chat_send(f"You can run, but You can't hide! (devil)")
-                    random_scout_squad = army.prefer_close_to(target)[:group_size]
-                    actions.extend(self.issue_group_attack(random_scout_squad, target))
-
-                elif self.workers.amount > 15:
-                    group_size = max(4, int(self.workers.amount*0.25)+1)
-                    await self.chat_send(f"You can run, but You can't hide! (devil)")
-                    random_scout_squad = self.workers.filter(lambda w: not w.is_constructing_scv).\
-                                             prefer_close_to(target)[:group_size]
-                    actions.extend(self.issue_group_attack(random_scout_squad, target))
+        actions.extend(await self.do_attack_decisions())
 
         # condition to start teching up
         if not self.tech_switch and self.supply_used > 21:
             self.tech_switch = 1
+            # print(f"enemy race is {self.enemy_race}")
             self.macro_bot.early_tech()
             await self.chat_send(f"(party) It's party time! (party)")
 
-        if self.supply_used > 170:  # attack when no units attacking and close to max supply
-            if len(self.attack_force_tags) < 15:
+        if self.supply_used > 190:  # attack when no units attacking and close to max supply
+            if len(self.attack_force_tags) < 20:
                 self.attack_flag = min(self.attack_flag, 37)  # attack soon
             else:
                 self.attack_flag = min(self.attack_flag, 20.2)
@@ -391,7 +320,7 @@ class MyBot(sc2.BotAI):
                 worker_pool.extend(workers.random_group_of(min(excess, len(workers))))
                 continue
         for g in self.geysers:
-            workers = self.workers.closer_than(5, g)
+            workers = self.workers.closer_than(1.9995, g)  # these are workers which may be removed from gas
             actual = g.assigned_harvesters
             ideal = g.ideal_harvesters
             excess = actual - ideal
@@ -438,7 +367,7 @@ class MyBot(sc2.BotAI):
             self.expand_flag = 5
             if self.already_pending(self.th_type) < 3:  # expand "only" 3 locations at once
                 await self.expand_now(closest_to=self.workers.random.position)
-                if self.townhalls.amount < 3:
+                if self.townhalls.amount < 3 and self.get_time_in_seconds() < 300:
                     await self.chat_send(f"Let's expand! (flex)")
         # not yet
         else:
@@ -447,7 +376,7 @@ class MyBot(sc2.BotAI):
     #edited snippet from bot_ai
     # async def expand_now(self, building: UnitTypeId = None, max_distance: Union[int, float] = 10,
     #                      location: Optional[Point2] = None, closest_to: Optional[Point2] = None):
-    async def expand_now(self, building=None, max_distance=10,
+    async def expand_now(self, building=None, max_distance=2,
                          location=None, closest_to=None):
         """Takes new expansion."""
 
@@ -477,6 +406,8 @@ class MyBot(sc2.BotAI):
         #     print(f"deleting exp_loc_cache")
         #     del self.expansion_locations
         #     self.reset_expansion_cache_flag = 3*60  # 3min
+        # other way around: save all locations at start and check if there is own base nearby
+        # could also save failed attempts for locations to skip bad bases
         for el in self.expansion_locations:
             def is_near_to_expansion(t):
                 return t.position.distance_to(el) < self.EXPANSION_GAP_THRESHOLD
@@ -494,6 +425,18 @@ class MyBot(sc2.BotAI):
                 closest = el
 
         return closest
+
+    # try using all_units=True by default - not working?
+    def already_pending(self, unit_type, all_units=True) -> int:
+        """
+        Returns a number of buildings or units already in progress, or if a
+        worker is en route to build it. This also includes queued orders for
+        workers and build queues of buildings.
+
+        If all_units==True, then build queues of other units (such as Carriers
+        (Interceptors) or Oracles (Stasis Ward)) are also included.
+        """
+        return super().already_pending(unit_type, all_units)
 
     def adjust_worker_limit(self):
         """Sets preferred worker amount depending on owned expansions."""
@@ -518,7 +461,7 @@ class MyBot(sc2.BotAI):
                         actions.append(self.units(self.s_args[0]).random.train(self.w_type))
                 else:
                     actions.append(th.train(self.w_type))
-        await self.do_actions(actions)
+        return actions
 
     def train_units(self, building_type, unit_type, max_amount=None):
         """Train unit in each idle building.
@@ -577,6 +520,7 @@ class MyBot(sc2.BotAI):
             targets.random_group_of(min(targets.amount, max_amount))
         return self.morph_units(targets, alt)
 
+    # TODO: return actions and use it in list like all other actions
     async def build_supply(self):
         """Get pylons/supplydepots/overlords."""
         if self.supply_cap == 200:
@@ -680,6 +624,75 @@ class MyBot(sc2.BotAI):
         if needed:
             await self.build_gas(needed)
 
+    async def do_attack_decisions(self):
+        attack_actions = []
+
+        # killed_base is here, since not used anywhere else.. move if needed
+        if not self.killed_start_base:
+            shortest_dist = self.units.closest_distance_to(self.enemy_start_locations[0])
+            if shortest_dist <= 2:
+                # print("killed enemy starting base")
+                self.killed_start_base = 1
+
+        if self.supply_used - self.workers.amount > 6 and not self.attack_flag and \
+                ((len(self.attack_force_tags) + len(self.def_force_tags)) <
+                 (self.units.not_structure.not_flying.amount / 2 + 1)):
+
+            # set new attack_flag
+            enemy_buildings = self.known_enemy_structures().not_flying.exclude_type(id_map.CREEP_TUMORS)
+            if not self.killed_start_base:
+                if enemy_buildings.amount > 0:
+                    target = enemy_buildings.random.position
+                else:
+                    target = self.enemy_start_locations[0]
+                self.attack_flag = 90  # seconds
+            elif enemy_buildings.not_flying.amount > 0:
+                target = self.known_enemy_structures.not_flying.random.position
+                self.attack_flag = 60  # seconds
+            else:
+                possible_targets = list(self.expansion_locations.keys())
+                # possible_targets.sort()  # try sorting to ensure same order every time (should save as var and use ref
+                number = len(possible_targets)
+                target = possible_targets[self.killed_start_base % number]
+                self.killed_start_base += 1
+                # LCM for base counts 4-13 = 360360
+                if self.killed_start_base > 360360 * 2:  # <-not realistic to happen :D
+                    self.killed_start_base %= 360360
+                self.attack_flag = 10  # seconds
+
+            # attack based on new attack flag
+            if self.attack_flag > 20:
+                army = self.units.not_structure.exclude_type(
+                    [self.w_type, UnitTypeId.OVERLORD, UnitTypeId.MULE, UnitTypeId.QUEEN])
+                attack_actions.extend(self.issue_group_attack(army, target))
+                if army.amount > 4:
+                    attack_actions.extend(self.issue_group_attack(army, target))
+
+                excess_workers = self.workers.amount - min(len(self.owned_expansions) * 29 + 1, 89)
+                if excess_workers > 0 and self.workers.amount > 0:
+                    attack_actions.extend(self.issue_worker_attack(target, (excess_workers / self.workers.amount)))
+
+            else:  # scout attack location
+                # print(f"attacking with: {len(set(self.def_force_tags.keys()).union(set(self.attack_force_tags.keys())))}")
+                # print(target)
+                army = self.units.not_structure.exclude_type(
+                    [self.w_type, UnitTypeId.OVERLORD, UnitTypeId.MULE, UnitTypeId.QUEEN]).\
+                    tags_not_in(set(self.def_force_tags.keys()).union(set(self.attack_force_tags.keys())))
+                if army.amount > 8:
+                    group_size = min(25, max(4, army.amount))  # groups of 4-20 units to scout enemy
+                    await self.chat_send(f"You can run, but You can't hide! (devil)")
+                    random_scout_squad = army.prefer_close_to(target)[:group_size]
+                    attack_actions.extend(self.issue_group_attack(random_scout_squad, target))
+
+                elif self.workers.amount > 15:
+                    group_size = max(4, int(self.workers.amount * 0.25) + 1)
+                    await self.chat_send(f"You can run, but You can't hide! (devil)")
+                    random_scout_squad = self.workers.filter(lambda w: not w.is_constructing_scv). \
+                                             prefer_close_to(target)[:group_size]
+                    attack_actions.extend(self.issue_group_attack(random_scout_squad, target))
+
+        return attack_actions
+
     def calc_enemy_att_str(self):
         """Calculates enemy attack strength.
 
@@ -748,6 +761,37 @@ class MyBot(sc2.BotAI):
         for tg in set(self.def_force_tags.keys()).intersection(self.attack_force_tags):
             del (self.attack_force_tags[tg])
 
+    def update_enemy_att_str(self):
+        # Reinforce defence
+        self.enemy_att_str_prev = self.enemy_att_str_curr.copy()
+        self.enemy_att_str_curr = self.calc_enemy_att_str()
+        enemy_att_got_stronger = self.enemy_att_str_max["hp"] < self.enemy_att_str_curr["hp"] and \
+                                 self.enemy_att_str_max["g_dps"] < self.enemy_att_str_curr["g_dps"]
+
+        enemy_is_as_strong = self.enemy_att_str_max["hp"] <= self.enemy_att_str_curr["hp"] and \
+                             self.enemy_att_str_max["g_dps"] <= self.enemy_att_str_curr["g_dps"]
+
+        if enemy_att_got_stronger:
+            self.enemy_att_str_save = 20
+
+        if not self.enemy_att_str_save:
+            # never erase enemy last position (where they did attack last time)
+            self.enemy_att_str_max = {"hp": 0, "g_dps": 0, "pos": self.enemy_att_str_max["pos"]}
+
+        c = self.enemy_att_str_curr
+        p = self.enemy_att_str_prev
+        m = self.enemy_att_str_max
+        self.enemy_att_str_max["hp"] = max(c["hp"], p["hp"], m["hp"])
+        self.enemy_att_str_max["g_dps"] = max(c["g_dps"], p["g_dps"], m["g_dps"])
+        if c["pos"]:
+            self.enemy_att_str_max["pos"] = c["pos"]  # use most recent position
+
+        # if enemy_att_got_stronger:
+        if m["pos"]:
+            return self.reinforce_defence()
+
+        return None
+
     def reinforce_defence(self):
         """Reinforces defence if there is an attack incoming.
 
@@ -786,11 +830,13 @@ class MyBot(sc2.BotAI):
             sorted(lambda w: -(w.health+w.shield)).prefer_close_to(enemy_position)
 
         #TODO: better way to assign and track enemy
-        if len(self.owned_expansions) >= 3:
-            workers = workers.closer_than(10, enemy_position)  # dont assign workers to defend
-            self.w_dist_flag = 5  # wait for 3s to re distribute workers
-            #TODO: just remove this townhall temporarily from worker distribution function
-            # (self.units = self.units.exclude_tag(tag_of_building) in the beginning of step)
+
+        # if len(self.owned_expansions) >= 3:
+        if enemy_dps > 20:  # if enemy is too strong, dont suicide all workers
+            workers = workers.closer_than(12, enemy_position)  # dont assign workers from other bases to defend
+        self.w_dist_flag = 5  # wait for 5s to re distribute workers
+        #TODO: just remove this townhall temporarily from worker distribution function
+        # (self.units = self.units.exclude_tag(tag_of_building) in the beginning of step)
 
         if len(army)+len(workers) < 1:
             return
@@ -887,7 +933,7 @@ class MyBot(sc2.BotAI):
 
     # from mass_reaper.py
     # stolen and modified from position.py
-    def neighbors4(self, position, distance=1):
+    def _neighbors4(self, position, distance=1):
         p = position
         d = distance
         return {
@@ -898,10 +944,10 @@ class MyBot(sc2.BotAI):
         }
 
     # stolen and modified from position.py
-    def neighbors8(self, position, distance=1):
+    def _neighbors8(self, position, distance=1):
         p = position
         d = distance
-        return self.neighbors4(position, distance) | {
+        return self._neighbors4(position, distance) | {
             position_imported.Point2((p.x - d, p.y - d)),
             position_imported.Point2((p.x - d, p.y + d)),
             position_imported.Point2((p.x + d, p.y - d)),
@@ -909,7 +955,7 @@ class MyBot(sc2.BotAI):
         }
 
     # this checks if a ground unit can walk on a Point2 position
-    def inPathingGrid(self, pos):
+    def _inPathingGrid(self, pos):
         # returns True if it is possible for a ground unit to move to pos - doesnt seem to work on ramps or near edges
         pos = pos.position.to2.rounded
         return self._game_info.pathing_grid[(pos)] != 0
@@ -935,9 +981,9 @@ class MyBot(sc2.BotAI):
         enemyThreatsClose = enemyAirThreatsClose or enemyGroundThreatsClose  # use or to combine selections
 
         if unit.health_percentage < 2 / 5 and enemyThreatsClose.exists and unit.shield < 1:
-            retreatPoints = self.neighbors8(unit.position, distance=2) | self.neighbors8(unit.position, distance=4)
+            retreatPoints = self._neighbors8(unit.position, distance=2) | self._neighbors8(unit.position, distance=4)
             # filter points that are pathable
-            retreatPoints = {x for x in retreatPoints if self.inPathingGrid(x)}
+            retreatPoints = {x for x in retreatPoints if self._inPathingGrid(x)}
             if retreatPoints:  # maybe this can be done more efficiently (pathing)
                 closestEnemy = enemyThreatsClose.closest_to(unit)
                 retreatPoint = closestEnemy.position.furthest(list(retreatPoints))  # need indexing in position.py
@@ -986,9 +1032,9 @@ class MyBot(sc2.BotAI):
         #     closer_than(unit.ground_range - 0.5, unit)  # hardcoded attackrange minus 0.5
         # threats that can attack the reaper
         if unit.weapon_cooldown != 0 and enemyThreatsVeryClose.exists:
-            retreatPoints = self.neighbors8(unit.position, distance=2) | self.neighbors8(unit.position, distance=4)
+            retreatPoints = self._neighbors8(unit.position, distance=2) | self._neighbors8(unit.position, distance=4)
             # filter points that are pathable by a reaper
-            retreatPoints = {x for x in retreatPoints if self.inPathingGrid(x)}
+            retreatPoints = {x for x in retreatPoints if self._inPathingGrid(x)}
             if retreatPoints:
                 closestEnemy = enemyThreatsVeryClose.closest_to(unit)
                 retreatPoint = max(retreatPoints, key=lambda x: x.distance_to(closestEnemy) - x.distance_to(unit))
@@ -1223,10 +1269,10 @@ class MyBot(sc2.BotAI):
         """Attack with single unit."""
         action = unit.attack(target)
         retreating = 0
-        unit.health_prev = unit.health
+        health_prev = unit.health
         self.attack_force_tags[unit.tag] = {"retreat": retreating,
                                             "hp_curr": unit.health,
-                                            "hp_prev": unit.health_prev,
+                                            "hp_prev": health_prev,
                                             "target": target}
         return action
 
@@ -1242,10 +1288,10 @@ class MyBot(sc2.BotAI):
         action = unit.attack(target)
         orig = target
         retreating = 0
-        unit.health_prev = unit.health
+        health_prev = unit.health
         self.def_force_tags[unit.tag] = {"retreat": retreating,
                                          "hp_curr": unit.health,
-                                         "hp_prev": unit.health_prev,
+                                         "hp_prev": health_prev,
                                          "target": target,
                                          "orig_target": orig}
         return action
@@ -1274,6 +1320,7 @@ class MyBot(sc2.BotAI):
                 await self.expand()
             elif curr_step in id_map.ADDON_BUILDING:  # implicitly isinstance(self.macro_bot, terran.TerranMacroBot)
                 building = id_map.ADDON_BUILDING[curr_step]
+                # noinspection PyUnresolvedReferences
                 acts = await self.macro_bot.build_addons(building, reactor=False, max_amount=1)
                 actions.extend(acts)
             elif curr_step not in id_map.MORPH_BUILDINGS:
@@ -1476,14 +1523,15 @@ class MyBot(sc2.BotAI):
     async def macro_boost(self):
         """General method for repetitive macro tasks."""
         actions = []
-        if isinstance(self.macro_bot, terran.TerranMacroBot) \
-                and self.get_time_in_seconds() > 600 \
-                and self.macro_bot.save_scans != 2:
-            curr = self.macro_bot.save_scans
-            self.macro_bot.save_scans = 2
-            new = self.macro_bot.save_scans
-            if curr != new:
-                print(f"Saving scans changed --> prev: {curr}, new {new}")
+        # if isinstance(self.macro_bot, terran.TerranMacroBot) \
+        #         and self.get_time_in_seconds() > 600 \
+        #         and self.macro_bot.save_scans != 2:
+        #     curr = self.macro_bot.save_scans
+        #     self.macro_bot.save_scans = 2
+        #     new = self.macro_bot.save_scans
+        #     if curr != new:
+        #         print(f"Saving scans changed --> prev: {curr}, new {new}")
+
         actions.extend(await self.macro_bot.general_macro())
 
         if self.minerals > 1200 and self.supply_used > 180 or self.race is not Race.Zerg:

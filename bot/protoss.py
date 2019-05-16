@@ -45,7 +45,7 @@ class ProtossMacroBot(RaceMacro):
         # controller.set_tech_goal(UnitTypeId.ROBOTICSFACILITY, controller.th_type, UnitTypeId.ROBOTICSFACILITY, 2, UnitTypeId.IMMORTAL)
 
         # colossi
-        controller.set_tech_goal(UnitTypeId.ROBOTICSBAY, controller.th_type, UnitTypeId.ROBOTICSFACILITY, 2,
+        controller.set_tech_goal(UnitTypeId.ROBOTICSBAY, controller.th_type, UnitTypeId.ROBOTICSFACILITY, 1,
                                  UnitTypeId.COLOSSUS)
 
     def mid_tech(self):
